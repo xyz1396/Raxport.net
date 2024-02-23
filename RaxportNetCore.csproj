@@ -9,7 +9,7 @@
 		<Copyright>Copyright@XYZ</Copyright>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
-		<PlatformTarget>x64</PlatformTarget>
+		<PlatformTarget>AnyCPU</PlatformTarget>
 		<StartupObject>Raxport.MainProgram</StartupObject>
 		<UseAppHost>true</UseAppHost>
 		<AssemblyName>Raxport</AssemblyName>
@@ -17,6 +17,10 @@
 		<ApplicationIcon>logo.ico</ApplicationIcon>
 	
 </PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='linux|AnyCPU'">
+	  <Optimize>True</Optimize>
+	</PropertyGroup>
 
 	<ItemGroup>
 	  <Content Include="logo.ico" />
