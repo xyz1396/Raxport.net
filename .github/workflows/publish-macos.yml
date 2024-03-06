@@ -38,7 +38,8 @@ jobs:
         dotnet publish -c Release -o . -r osx-arm64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
         cp Raxport release/Raxport-osx-arm64
         # cp README.md release/README.md
-    
+        chmod +x Raxport
+        ./Raxport -h
 
     - name: Upload build artificats
       uses: actions/upload-artifact@v2
