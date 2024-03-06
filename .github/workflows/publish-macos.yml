@@ -1,0 +1,57 @@
+name: publish-macos
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches: [ master ]
+  release:
+    types: [ created ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '6.0.x' # The .NET SDK version to use
+
+jobs:
+  publish:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Install dependencies
+      run: dotnet restore
+
+    - name: Prepare build
+      run: |
+        mkdir release
+      
+    - name: Build
+      run: |
+        dotnet build --configuration Release --no-restore
+        dotnet publish -c Release -o . -r osx-arm64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
+        cp Raxport release/Raxport-osx-arm64 && \
+        # cp README.md release/README.md
+    
+
+    - name: Upload build artificats
+      uses: actions/upload-artifact@v2
+      with:
+        name: Raxport-osx-arm64
+        path: release/*
+
+    - name: Upload binaries to the release
+      uses: svenstaro/upload-release-action@v2
+      # if: ${{ github.event_name == 'release' }}
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        tag: ${{ github.ref }}
+        file: release/*
+        overwrite: true
+        file_glob: true
