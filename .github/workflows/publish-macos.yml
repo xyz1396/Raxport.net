@@ -37,14 +37,17 @@ jobs:
         dotnet build --configuration Release --no-restore
         dotnet publish -c Release -o . -r osx-arm64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
         cp Raxport release/Raxport-osx-arm64
+        dotnet publish -c Release -o . -r osx-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
+        cp Raxport release/Raxport-osx-x64
         # cp README.md release/README.md
+        # for test
         chmod +x Raxport
         ./Raxport -h
 
     - name: Upload build artificats
       uses: actions/upload-artifact@v2
       with:
-        name: Raxport-osx-arm64
+        name: Raxport-osx
         path: release/*
 
     - name: Upload binaries to the release
