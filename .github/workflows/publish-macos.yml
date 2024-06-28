@@ -35,7 +35,7 @@ jobs:
     - name: Build
       run: |
         dotnet build --configuration Release --no-restore
-        dotnet publish -c Release -o . -r osx-arm64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
+        dotnet publish -c Release -o . -r osx-arm64 --self-contained true /p:PlatformTarget=AnyCPU /p:PublishSingleFile=true /p:PublishTrimmed=true
         cp Raxport release/Raxport-osx-arm64
         dotnet publish -c Release -o . -r osx-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
         cp Raxport release/Raxport-osx-x64
@@ -45,13 +45,13 @@ jobs:
         ./Raxport -h
 
     - name: Upload build artificats
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: Raxport-osx
         path: release/*
 
     - name: Upload binaries to the release
-      uses: svenstaro/upload-release-action@v2
+      uses: svenstaro/upload-release-action@v4
       # if: ${{ github.event_name == 'release' }}
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}

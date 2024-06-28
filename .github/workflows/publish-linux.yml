@@ -40,13 +40,13 @@ jobs:
         # cp README.md release/README.md
     
     - name: Upload build artificats
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: Raxport-linux
         path: release/*
 
     - name: Upload binaries to the release
-      uses: svenstaro/upload-release-action@v2
+      uses: svenstaro/upload-release-action@v4
       # if: ${{ github.event_name == 'release' }}
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
