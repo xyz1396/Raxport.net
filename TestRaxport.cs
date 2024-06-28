@@ -33,12 +33,21 @@ namespace TestRaxport
             Assert.AreEqual(writer!.scanNumberRanges!.Count, 2, 0.001, "MS1scanNumbers not debited correctly");
         }
         [TestMethod]
-        public void Test2SplitedWrite()
+        public void TestSplitedWrite()
         {
             FTwriter writer = new("D:\\work\\202402\\X13N_1Da_overlap_ID111456_01_OA10034_10328_012424.raw",
             "D:\\work\\202402\\FTtest", false);
+            writer.ifMergeScans = false;
             writer.InitScanNumberRanges(20000);
-            writer.SplitedWrite(7);
+            writer.SplitedWrite(12);
+        }
+        [TestMethod]
+        public void TestWrite()
+        {
+            FTwriter writer = new("D:\\vm\\share\\mousefecal\\raw\\PanC_020624_12.raw",
+            "D:\\work\\202402\\FTtest", true);
+            writer.ifMergeScans = true;
+            writer.Write();
         }
         [TestMethod]
         public void TestBinarySearchMzRange()
@@ -66,7 +75,6 @@ namespace TestRaxport
             //Scan currentScan = Scan.FromFile(rawFile, 3815);
             Scan currentScan = Scan.FromFile(rawFile, 98711);
             LabelPeak[] peaks = currentScan.CentroidScan.GetLabelPeaks();
-            Iwriter.currentPrecusorScan = currentScan;
             //Iwriter.findPrecursorPeaks(655, 10, 5, 0.95);
             //Iwriter.findPrecursorPeaks(740, 10, 5, 0.95);
             //Iwriter.findPrecursorPeaks(662, 4, 5, 0.95);
@@ -75,8 +83,8 @@ namespace TestRaxport
             // for no peak region at right
             //Iwriter.findPrecursorPeaks(978, 4, 5, 0.95);
             //Iwriter.findPrecursorPeaks(962, 4, 5, 0.95);
-            Iwriter.FindPrecursorPeaks(2000, 4, 5, 0.95);
-            foreach (LabelPeak peak in Iwriter!.currentPrecurosrPeaks!)
+            List<LabelPeak> peaks2 = Iwriter.FindPrecursorPeaks(currentScan, 2000, 4, 5, 0.95);
+            foreach (LabelPeak peak in peaks2!)
             {
                 Console.WriteLine(peak.Mass);
             }

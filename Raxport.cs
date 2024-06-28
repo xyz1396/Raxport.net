@@ -2,36 +2,44 @@
 using ThermoFisher.CommonCore.Data.Business;
 using ThermoFisher.CommonCore.Data.Interfaces;
 using ThermoFisher.CommonCore.RawFileReader;
+using ThermoFisher.CommonCore.BackgroundSubtraction;
 using System.Collections;
 
 namespace Raxport
 {
     public class FTwriter
     {
-        static private string raxportVersion = "5";
+        static private readonly string raxportVersion = "5";
+        // file name with full path of raw file
         private string? rawFileName;
         private readonly string? outPath;
         private IRawDataPlus? rawFile;
-        private int firstScanNumber;
-        private int lastScanNumber;
-        // for precursor select
-        public int topNprecursor = 5;
-        public double intensityTreshold = 0.95;
-        public double mzTolerance = 0.01;
-        public IEnumerable<int>? MS1scanNumbers;
-        public List<int[]>? scanNumberRanges;
-        private int currentScanNumber;
-        private IScanEvent? currentEvent;
-        public Scan? currentPrecusorScan;
-        public List<LabelPeak>? currentPrecurosrPeaks;
-        private Scan? currentScan;
-        private int currentPrecusorScanNumber;
-        private IScanFilter? currentFilter;
-        private IReaction? currentReaction;
-        private bool hasCharge;
+        private StringWriter? tmpStringChunk = new();
         private StreamWriter? FT1writer;
         private StreamWriter? FT2writer;
-        // rawFileName: file name with full path of raw file
+        private int firstScanNumber;
+        private int lastScanNumber;
+
+        // for precursor select
+        public int topNprecursor = 15;
+        public double intensityTreshold = 0.99;
+        int[] chargesInConsideration = { 2, 3, 4 };
+        public double mzTolerance = 0.01;
+
+        // for splited FT2 files
+        public IEnumerable<int>? MS1scanNumbers;
+        public List<int[]>? scanNumberRanges;
+
+        // for merge 2 adjacent MS1 scans
+        public bool ifMergeScans = false;
+        private IScanAveragePlus? averager;
+
+        // for writing MS2 scans in chunk between two MS1 scans
+        private List<Scan> MS2scansChunk = new();
+        private List<int> MS2scanNumbersChunk = new();
+        private List<IScanFilter> MS2scanFiltersChunk = new();
+        private List<IReaction> MS2scanReactionsChunk = new();
+        private List<double> MS2ScansRTsChunk = new();
         public FTwriter(string fileName, string path, bool createFT)
         {
             outPath = path;
@@ -72,6 +80,7 @@ namespace Raxport
         {
         }
         // split scanNumbers by begining with MS1 scan for splited FT files
+        // each scan ranges begin with a MS1 scan and end with first MS1 of next scans range 
         public void InitScanNumberRanges(int splitRange)
         {
             int startScanNumber = firstScanNumber, endScanNumber = lastScanNumber;
@@ -81,7 +90,7 @@ namespace Raxport
             {
                 if ((int)g.Current - startScanNumber > splitRange)
                 {
-                    endScanNumber = (int)g.Current - 1;
+                    endScanNumber = (int)g.Current;
                     scanNumberRanges.Add(new int[] { startScanNumber, endScanNumber });
                     startScanNumber = (int)g.Current;
                 }
@@ -115,29 +124,46 @@ namespace Raxport
                 }
             }
             int i = mid;
-            if (i == peaks.Length - 1)
-                return (peaksInRange);
             if (peaks[i].Mass < start)
                 i++;
-            while (end > peaks[i].Mass && i < peaks.Length - 1)
+            while (i < peaks.Length)
             {
-                // remove peak without charge
-                if (peaks[i].Charge > 0)
-                    peaksInRange.Add(peaks[i]);
+                if (peaks[i].Mass > end)
+                    break;
+                else
+                {
+                    if (peaks[i].Charge > 0)
+                        peaksInRange.Add(peaks[i]);
+                    // guess charge state
+                    else
+                    {
+                        foreach (int charge in chargesInConsideration)
+                        {
+                            // deep copy peak
+                            LabelPeak mPeak = new()
+                            {
+                                Charge = charge,
+                                Mass = peaks[i].Mass,
+                                Intensity = peaks[i].Intensity
+                            };
+                            peaksInRange.Add(mPeak);
+                        }
+                    }
+                }
                 i++;
             }
             return (peaksInRange);
         }
         // find prescursor peaks with topN intensity in a range 
-        public void FindPrecursorPeaks(double precusorMZ, double isolationWindow, int topN, double intensityRatio)
+        public List<LabelPeak> FindPrecursorPeaks(Scan mScan, double precusorMZ, double isolationWindow, int topN, double intensityRatio)
         {
-            currentPrecurosrPeaks = new List<LabelPeak>();
+            List<LabelPeak> precurosrPeaks = new List<LabelPeak>();
             double neutronMass = 1.003355;
             bool foundIsotopicPeak = false;
             double totalIntensity = 0.000000001;
             double summedIntensity = 0;
             int[] tryISO = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-            List<LabelPeak> peaksInRange = BinarySearchMzRange(currentPrecusorScan!.CentroidScan.GetLabelPeaks(),
+            List<LabelPeak> peaksInRange = BinarySearchMzRange(mScan.CentroidScan.GetLabelPeaks(),
                 precusorMZ - isolationWindow / 2, precusorMZ + isolationWindow / 2);
             peaksInRange = peaksInRange.OrderByDescending(o => o.Intensity).ToList();
             foreach (LabelPeak peak in peaksInRange) { totalIntensity += peak.Intensity; }
@@ -146,9 +172,9 @@ namespace Raxport
                 // stop while intensity ratio threshold of isotopic peaks reached
                 if (summedIntensity / totalIntensity > intensityRatio)
                     break;
-                currentPrecurosrPeaks.Add(peaksInRange[i]);
+                precurosrPeaks.Add(peaksInRange[i]);
                 summedIntensity += peaksInRange[i].Intensity;
-                if (currentPrecurosrPeaks.Count >= topN)
+                if (precurosrPeaks.Count >= topN)
                     break;
                 // remove isotopic peaks
                 foreach (int iso in tryISO)
@@ -171,6 +197,7 @@ namespace Raxport
                     if (!foundIsotopicPeak) break;
                 }
             }
+            return (precurosrPeaks);
         }
         public void WriteHeader()
         {
@@ -181,11 +208,11 @@ namespace Raxport
             FT2writer.WriteLine("H\tm/z\tIntensity\tResolution\tBaseline\tNoise\tCharge");
             FT2writer.WriteLine("H\tInstrument Model\t" + rawFile.GetInstrumentData().Model);
         }
-        public void WritePeak(StreamWriter writer)
+        public void WritePeak(StringWriter writer, Scan mScan)
         {
-            if (hasCharge)
+            if (mScan.HasCentroidStream)
             {
-                LabelPeak[] peaks = currentScan!.CentroidScan.GetLabelPeaks();
+                LabelPeak[] peaks = mScan.CentroidScan.GetLabelPeaks();
                 foreach (LabelPeak peak in peaks)
                 {
                     // SignalToNoise is peak.Noise in old V3 version
@@ -195,82 +222,170 @@ namespace Raxport
             }
             else
             {
-                for (int i = 0; i < currentScan!.SegmentedScan.Positions.Length; i++)
+                for (int i = 0; i < mScan.SegmentedScan.Positions.Length; i++)
                 {
-                    writer.WriteLine("{0:F6}\t{1:F2}", currentScan.SegmentedScan.Positions[i], currentScan.SegmentedScan.Intensities[i]);
+                    writer.WriteLine("{0:F6}\t{1:F2}", mScan.SegmentedScan.Positions[i], mScan.SegmentedScan.Intensities[i]);
                 }
             }
         }
-        public void WriteFT1Scan()
+        public void WriteFT1Scan(int mScanNumber, Scan mScan, IScanFilter mFilter, double mRT)
         {
-            FT1writer!.WriteLine("S\t{0:D}\t{1:F2}", currentScanNumber, currentScan!.ScanStatistics.TIC);
-            FT1writer.WriteLine("I\tRetentionTime\t{0:F6}", rawFile!.RetentionTimeFromScanNumber(currentScanNumber));
-            FT1writer.WriteLine("I\tScanType\tMs1");
-            FT1writer.WriteLine("I\tScanFilter\t" + currentFilter!.ToString());
-            WritePeak(FT1writer);
+            tmpStringChunk!.WriteLine("S\t{0:D}\t{1:F2}", mScanNumber, mScan.ScanStatistics.TIC);
+            tmpStringChunk.WriteLine("I\tRetentionTime\t{0:F6}", mRT);
+            tmpStringChunk.WriteLine("I\tScanType\tMs1");
+            tmpStringChunk.WriteLine("I\tScanFilter\t" + mFilter!.ToString());
+            WritePeak(tmpStringChunk, mScan);
+            // Write function won't change line
+            FT1writer!.Write(tmpStringChunk.ToString());
+            tmpStringChunk.GetStringBuilder().Clear();
         }
-        public void WriteFT2Scan()
+        public void WriteFT2Scan(int mScanNumber, int mPrecusorScanNumber, IReaction mReaction, Scan mScan,
+            Scan mPrecursorScan, IScanFilter mFilter, double mRT)
         {
-            // for old sipros V3 format, currentScanNumber repeats once in old version
-            //FT2writer.WriteLine("S\t{0:D}\t{0:D}\t{1:F6}\t{2:F2}",
-            FT2writer!.WriteLine("S\t{0:D}\t{1:F6}\t{2:F2}",
-               currentScanNumber, currentReaction!.PrecursorMass, currentScan!.ScanStatistics.TIC);
-            var trailerLabels = rawFile!.GetTrailerExtraInformation(currentScanNumber);
+            // for old sipros V3 format, ScanNumber repeats once in old version
+            // tmpStringChunk!.WriteLine("S\t{0:D}\t{0:D}\t{1:F6}\t{2:F2}",
+            tmpStringChunk!.WriteLine("S\t{0:D}\t{1:F6}\t{2:F2}",
+               mScanNumber, mReaction.PrecursorMass, mScan.ScanStatistics.TIC);
+            var trailerLabels = rawFile!.GetTrailerExtraInformation(mScanNumber);
             object chargeState = 0;
             for (int i = 0; i < trailerLabels.Labels.Length; i++)
             {
                 if (trailerLabels.Labels[i] == "Charge State:")
                 {
-                    chargeState = rawFile.GetTrailerExtraValue(currentScanNumber, i);
+                    chargeState = rawFile.GetTrailerExtraValue(mScanNumber, i);
                     break;
                 }
             }
             int chargeStateInt = Convert.ToInt32(chargeState);
-            FindPrecursorPeaks(currentReaction.PrecursorMass, currentReaction.IsolationWidth, topNprecursor,
+            List<LabelPeak> precursorPeaks = FindPrecursorPeaks(mPrecursorScan, mReaction.PrecursorMass, mReaction.IsolationWidth, topNprecursor,
                 intensityTreshold);
             // write isolation window center, this will be precusor peak if DDA
-            FT2writer.Write("Z\t{0:D}\t{1:F6}",
-                chargeStateInt, chargeStateInt * currentReaction.PrecursorMass);
+            tmpStringChunk!.Write("Z\t{0:D}\t{1:F6}",
+                chargeStateInt, chargeStateInt * mReaction.PrecursorMass);
             // write best precusor peaks' charge and MZ in isolation window 
-            foreach (LabelPeak peak in currentPrecurosrPeaks!)
+            foreach (LabelPeak peak in precursorPeaks!)
             {
-                FT2writer.Write("\t{0:D}\t{1:F6}", (int)peak.Charge, peak.Mass);
+                tmpStringChunk.Write("\t{0:D}\t{1:F6}", (int)peak.Charge, peak.Mass);
             }
-            FT2writer.Write("\n");
-            FT2writer.WriteLine("I\tRetentionTime\t{0:F6}", rawFile.RetentionTimeFromScanNumber(currentScanNumber));
+            tmpStringChunk.Write("\n");
+            tmpStringChunk.WriteLine("I\tRetentionTime\t{0:F6}", mRT);
             // for old sipros V3 format, add " X X" because in old formt this line has 7 chunks
-            //FT2writer.WriteLine("I\tScanType\t" + currentFilter.MSOrder + " @ " + currentFilter.GetActivation(0) + " X X");
-            FT2writer.WriteLine("I\tScanType\t" + currentFilter!.MSOrder + " @ " + currentFilter.GetActivation(0));
-            FT2writer.WriteLine("I\tScanFilter\t" + currentFilter.ToString());
-            FT2writer.WriteLine("D\tParentScanNumber\t{0:D}", currentPrecusorScanNumber);
-            WritePeak(FT2writer);
+            //tmpStringChunk.WriteLine("I\tScanType\t" + mFilter.MSOrder + " @ " + mFilter.GetActivation(0) + " X X");
+            tmpStringChunk.WriteLine("I\tScanType\t" + mFilter.MSOrder + " @ " + mFilter.GetActivation(0));
+            tmpStringChunk.WriteLine("I\tScanFilter\t" + mFilter.ToString());
+            tmpStringChunk.WriteLine("D\tParentScanNumber\t{0:D}", mPrecusorScanNumber);
+            WritePeak(tmpStringChunk, mScan);
+            FT2writer!.Write(tmpStringChunk.ToString());
+            tmpStringChunk.GetStringBuilder().Clear();
+        }
+        public void writeScansChunk(int leftPrecursorScanNumber, int rightPrecursorScanNumber,
+            Scan leftPrecursorScan, Scan rightPrecursorScan, IScanFilter rightFilter,
+            double leftPrecursorRT, double rightPrecursorRT)
+        {
+            Scan currentPrecursorScan = rightPrecursorScan;
+            int currentPrecursorScanNumber = rightPrecursorScanNumber;
+            if (ifMergeScans)
+            {
+                rightPrecursorRT = (leftPrecursorRT + rightPrecursorRT) / 2.0;
+                currentPrecursorScan = merge2Scans(leftPrecursorScanNumber, rightPrecursorScanNumber);
+                currentPrecursorScanNumber = rightPrecursorScanNumber;
+            }
+            WriteFT1Scan(currentPrecursorScanNumber, currentPrecursorScan, rightFilter, rightPrecursorRT);
+            for (int i = 0; i < MS2scansChunk.Count; i++)
+            {
+                if (!ifMergeScans)
+                {
+                    if (Math.Abs(MS2ScansRTsChunk[i] - leftPrecursorRT)
+                    < Math.Abs(MS2ScansRTsChunk[i] - rightPrecursorRT))
+                    {
+                        currentPrecursorScan = leftPrecursorScan;
+                        currentPrecursorScanNumber = leftPrecursorScanNumber;
+                    }
+                    else
+                    {
+                        currentPrecursorScan = rightPrecursorScan;
+                        currentPrecursorScanNumber = rightPrecursorScanNumber;
+                    }
+
+                }
+                WriteFT2Scan(MS2scanNumbersChunk[i], currentPrecursorScanNumber, MS2scanReactionsChunk[i],
+                    MS2scansChunk[i], currentPrecursorScan, MS2scanFiltersChunk[i], MS2ScansRTsChunk[i]);
+            }
+        }
+        public Scan merge2Scans(int leftScanNumber, int rightScanNumber)
+        {
+            List<int> scanNumbers = new(new[] { leftScanNumber, rightScanNumber });
+            var options = rawFile.DefaultMassOptions();
+            options.ToleranceUnits = ToleranceUnits.ppm;
+            options.Tolerance = 10.0;
+            Scan mergedScan = averager!.AverageScans(scanNumbers, options);
+            return mergedScan;
         }
         public void Write()
         {
             WriteHeader();
-            currentScanNumber = firstScanNumber;
-            Console.WriteLine("Converting " + rawFileName + "'s " + firstScanNumber + " to " + lastScanNumber + " Scans");
+            Console.WriteLine("Converting " + rawFileName + "'s " + firstScanNumber
+                + " to " + lastScanNumber + " Scans");
+            int currentScanNumber = firstScanNumber, precursorScanCount = 0, leftPrecursorScanNumber = 0, rightPrecursorScanNumber = 0;
+            averager = ScanAveragerPlus.FromFile(rawFile);
+            IScanEvent currentEvent;
+            IScanFilter currentFilter;
+            IReaction currentReaction;
+            Scan currentScan = new(), leftPrecursorScan = new(), rightPrecursorScan = new();
+            double currentRT = 0, leftPrecursorRT = 0, rightPrecursorRT = 0;
             while (currentScanNumber <= lastScanNumber)
             {
+                currentRT = rawFile!.RetentionTimeFromScanNumber(currentScanNumber);
                 currentScan = Scan.FromFile(rawFile, currentScanNumber);
                 currentFilter = rawFile!.GetFilterForScanNumber(currentScanNumber);
-                currentEvent = rawFile.GetScanEventForScanNumber(currentScanNumber);
-                if (currentScan.HasCentroidStream)
-                    hasCharge = true;
-                else
-                    hasCharge = false;
                 if (currentFilter.MSOrder == ThermoFisher.CommonCore.Data.FilterEnums.MSOrderType.Ms)
                 {
-                    currentPrecusorScanNumber = currentScanNumber;
-                    currentPrecusorScan = Scan.FromFile(rawFile, currentScanNumber);
-                    WriteFT1Scan();
+                    precursorScanCount++;
+                    if (precursorScanCount == 1)
+                    {
+                        leftPrecursorScanNumber = currentScanNumber;
+                        leftPrecursorScan = currentScan;
+                        leftPrecursorRT = currentRT;
+                        if (!ifMergeScans)
+                            WriteFT1Scan(leftPrecursorScanNumber, leftPrecursorScan,
+                                currentFilter, leftPrecursorRT);
+                    }
+                    else
+                    {
+                        rightPrecursorScanNumber = currentScanNumber;
+                        rightPrecursorScan = currentScan;
+                        rightPrecursorRT = currentRT;
+                        writeScansChunk(leftPrecursorScanNumber, rightPrecursorScanNumber,
+                            leftPrecursorScan, rightPrecursorScan, currentFilter,
+                            leftPrecursorRT, rightPrecursorRT);
+                        MS2scansChunk.Clear();
+                        MS2scanNumbersChunk.Clear();
+                        MS2scanFiltersChunk.Clear();
+                        MS2scanReactionsChunk.Clear();
+                        MS2ScansRTsChunk.Clear();
+                        leftPrecursorScanNumber = currentScanNumber;
+                        leftPrecursorScan = currentScan;
+                        leftPrecursorRT = currentRT;
+                    }
                 }
-                if (currentFilter.MSOrder == ThermoFisher.CommonCore.Data.FilterEnums.MSOrderType.Ms2)
+                else
                 {
+                    currentEvent = rawFile.GetScanEventForScanNumber(currentScanNumber);
                     currentReaction = currentEvent.GetReaction(0);
-                    WriteFT2Scan();
+                    MS2scansChunk.Add(currentScan);
+                    MS2scanNumbersChunk.Add(currentScanNumber);
+                    MS2scanFiltersChunk.Add(currentFilter);
+                    MS2scanReactionsChunk.Add(currentReaction);
+                    MS2ScansRTsChunk.Add(currentRT);
                 }
                 currentScanNumber++;
+            }
+            // write left MS2 scans chunk in the end of raw file
+            for (int i = 0; i < MS2scansChunk.Count; i++)
+            {
+                WriteFT2Scan(MS2scanNumbersChunk[i], rightPrecursorScanNumber, MS2scanReactionsChunk[i],
+                             MS2scansChunk[i], rightPrecursorScan,
+                             MS2scanFiltersChunk[i], MS2ScansRTsChunk[i]);
             }
             FT1writer!.Close();
             FT2writer!.Close();
@@ -284,6 +399,8 @@ namespace Raxport
                 {
                     rawFile = rawFile,
                     rawFileName = rawFileName,
+                    ifMergeScans = ifMergeScans,
+                    topNprecursor = topNprecursor,
                     firstScanNumber = scanNumberRange[0],
                     lastScanNumber = scanNumberRange[1],
                     FT1writer = new StreamWriter(outPath + "/" + Path.GetFileNameWithoutExtension(rawFileName)
@@ -303,6 +420,8 @@ namespace Raxport
         static string outPath = "";
         static int threads = 6;
         static int scanNumbersPerFT2 = 0;
+        static bool ifMergeScans = false;
+        static int topN = 15;
         public static void StopNoCloseWindow()
         {
             // Console.WriteLine("Press any key to exit");
@@ -320,6 +439,8 @@ namespace Raxport
                 "Or ./Raxport -f 'one raw file name' -o 'output path'\n" +
                 "\n" +
                 "add '-s 20000' if you want to split 20000 scans per .FT2 file \n" +
+                "add '-m' if you want to merge 2 adjcent MS1 scans \n" +
+                "add '-n 5' if you want to limit precursor numbers of each MS2 scan to 5 \n" +
                 "Default path is ./ \n";
             for (int i = 0; i < args.Length; i++)
             {
@@ -340,6 +461,10 @@ namespace Raxport
                     _ = int.TryParse(args[++i], out threads);
                 else if (args[i] == "-s")
                     _ = int.TryParse(args[++i], out scanNumbersPerFT2);
+                else if (args[i] == "-m")
+                    ifMergeScans = true;
+                else if (args[i] == "-n")
+                    _ = int.TryParse(args[++i], out topN);
             }
             try
             {
@@ -380,6 +505,8 @@ namespace Raxport
                     foreach (var file in rawFiles!)
                     {
                         FTwriter writer = new(file, outPath, false);
+                        writer.ifMergeScans = ifMergeScans;
+                        writer.topNprecursor = topN;
                         writer.InitScanNumberRanges(scanNumbersPerFT2);
                         writer.SplitedWrite(threads);
                     }
@@ -388,6 +515,8 @@ namespace Raxport
                     Parallel.ForEach(rawFiles!, new ParallelOptions { MaxDegreeOfParallelism = threads }, (rawFile) =>
                        {
                            FTwriter writer = new(rawFile, outPath, true);
+                           writer.ifMergeScans = ifMergeScans;
+                           writer.topNprecursor = topN;
                            writer.Write();
                        });
                 }
