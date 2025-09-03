@@ -58,4 +58,4 @@ Each scan has a scan header and a peaks information table.
 
 ### Compile it in Visual Studio
 
-Raxport.net is developed under .NET 8 and relies on `ThermoFisher.CommonCore.RawFileReader.dll` and `ThermoFisher.CommonCore.Data.dll` from [FreeStyle of ThermoFisher](https://github.com/thermofisherlsms/RawFileReader). You can clone this project and compile it in Visual Studio. See the ![note.md](./note.md) for additional details.
+Raxport.net is developed under .NET 8 and relies on `ThermoFisher.CommonCore.RawFileReader.dll` and `ThermoFisher.CommonCore.Data.dll` from [RawFileReader](https://github.com/thermofisherlsms/RawFileReader). You can clone this project and compile it in Visual Studio. See the [note.md](./note.md) for additional details.
