@@ -252,7 +252,7 @@ namespace Raxport
             {
                 if (trailerLabels.Labels[i] == "Charge State:")
                 {
-                    chargeState = rawFile.GetTrailerExtraValue(mScanNumber, i);
+                    chargeState = trailerLabels.Values[i].Trim();
                     break;
                 }
             }

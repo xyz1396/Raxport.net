@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<VersionPrefix>5</VersionPrefix>
@@ -15,6 +15,7 @@
 		<AssemblyName>Raxport</AssemblyName>
 		<Configurations>Debug;Release;linux</Configurations>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
+		<PackageIcon>logo.png</PackageIcon>
 	
 </PropertyGroup>
 
@@ -35,13 +36,13 @@
 
 	<ItemGroup>
 		<Reference Include="ThermoFisher.CommonCore.BackgroundSubtraction">
-		  <HintPath>..\..\202402\RaxportNetCore\dll\ThermoFisher.CommonCore.BackgroundSubtraction.dll</HintPath>
+		  <HintPath>dll\ThermoFisher.CommonCore.BackgroundSubtraction.dll</HintPath>
 		</Reference>
 		<Reference Include="ThermoFisher.CommonCore.Data">
 			<HintPath>dll\ThermoFisher.CommonCore.Data.dll</HintPath>
 		</Reference>
 		<Reference Include="ThermoFisher.CommonCore.MassPrecisionEstimator">
-		  <HintPath>..\..\202402\RaxportNetCore\dll\ThermoFisher.CommonCore.MassPrecisionEstimator.dll</HintPath>
+		  <HintPath>dll\ThermoFisher.CommonCore.MassPrecisionEstimator.dll</HintPath>
 		</Reference>
 		<Reference Include="ThermoFisher.CommonCore.RawFileReader">
 			<HintPath>dll\ThermoFisher.CommonCore.RawFileReader.dll</HintPath>

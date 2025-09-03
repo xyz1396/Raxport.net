@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: '6.0.x' # The .NET SDK version to use
+  DOTNET_VERSION: '8.0.x' # The .NET SDK version to use
 
 jobs:
   publish:
@@ -35,7 +35,7 @@ jobs:
     - name: Build
       run: |
         dotnet build --configuration Release --no-restore
-        dotnet publish -c Release -o . -r linux-x64 --self-contained true /p:PublishSingleFile=true /p:PublishReadyToRun=true /p:PublishTrimmed=true
+        dotnet publish -c Release -o . -r linux-x64 -p:PublishSingleFile=true -p:PublishTrimmed=true --self-contained true
         cp Raxport release/Raxport
         # cp README.md release/README.md
     

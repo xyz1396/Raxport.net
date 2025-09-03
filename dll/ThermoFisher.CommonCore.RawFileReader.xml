@@ -592,6 +592,7 @@
         <member name="T:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter">
             <summary>
             The wrapped scan filter.
+            Adds a public interface to an internal class.
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.#ctor(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IFilterScanEvent)">
@@ -623,7 +624,7 @@
             The size of compensation voltage array
             </value>
         </member>
-        <member name="P:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SouceFragmentaionValueCount">
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SourceFragmentationValueCount">
             <summary>
             Gets the number of Source Fragmentation values
             </summary>
@@ -633,7 +634,7 @@
             Retrieves a source fragmentation value at 0-based index.
             </summary>
             <remarks>
-            Use <see cref="P:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SouceFragmentaionValueCount"/> to get the count of
+            Use <see cref="P:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SourceFragmentationValueCount"/> to get the count of
             source fragmentation values.
             </remarks>
             <param name="index">
@@ -945,7 +946,7 @@
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetReaction(System.Int32)">
             <summary>
-            The get reaction.
+            Gets a reaction.
             </summary>
             <param name="index">
             The index.
@@ -953,6 +954,14 @@
             <returns>
             The <see cref="T:ThermoFisher.CommonCore.Data.Business.IReaction"/>.
             </returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SetReactions(System.Collections.Generic.IList{ThermoFisher.CommonCore.Data.Business.IReaction})">
+            <summary>
+            Sets the reaction table.
+            </summary>
+            <param name="reactions">
+            The set of reactions for this filter.
+            </param>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetMass(System.Int32)">
             <summary>
@@ -978,35 +987,35 @@
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetPrecursorRangeValidity(System.Int32)">
             <summary>
-            The get precursor range validity.
+            Get the precursor range validity.
             </summary>
             <param name="index">
             The index.
             </param>
             <returns>
-            The <see cref="T:System.Boolean"/>.
+            true if this item is valid.
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetFirstPrecursorMass(System.Int32)">
             <summary>
-            The get first precursor mass.
+            Get the first precursor mass, at a given index.
             </summary>
             <param name="index">
             The index.
             </param>
             <returns>
-            The <see cref="T:System.Double"/>.
+            The first precursor mass for the selected index.
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetLastPrecursorMass(System.Int32)">
             <summary>
-            The get last precursor mass.
+            Get the last precursor mass, at a given index.
             </summary>
             <param name="index">
             The index.
             </param>
             <returns>
-            The <see cref="T:System.Double"/>.
+            The last precursor mass for the selected index.
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetIsolationWidth(System.Int32)">
@@ -1022,13 +1031,13 @@
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetIsolationWidthOffset(System.Int32)">
             <summary>
-            The get isolation width offset.
+            Get the isolation width offset.
             </summary>
             <param name="index">
             The index.
             </param>
             <returns>
-            The <see cref="T:System.Double"/>.
+            The isolation width at the requested index.
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetEnergyValid(System.Int32)">
@@ -1085,6 +1094,52 @@
             Gets the source fragmentation info count.
             </summary>
         </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SetLowerFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags,ThermoFisher.CommonCore.Data.FilterEnums.TriState)">
+            <summary>
+            Set the state of a lower case flag.
+            On: Flag applied On
+            Off: Flag applied Off
+            Any: Flag not used (not applied and off)
+            </summary>
+            <param name="flag">The lower case flag to set</param>
+            <param name="value">New value of the flag</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetLowerCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags)">
+            <summary>
+            Get the state of a lower case flag, from the lower case flag bits and the active flag bits.
+            If it is not active, return "Any"
+            </summary>
+            <param name="flag">The lower case flag to check</param>
+            <returns>current values of the flag</returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SetUpperFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags,ThermoFisher.CommonCore.Data.FilterEnums.TriState)">
+            <summary>
+            Set the state of a upper case flag.
+            On: Flag applied On
+            Off: Flag applied Off
+            Any: Flag not used (not applied and off)
+            </summary>
+            <param name="flag">The upper case flag to set</param>
+            <param name="value">New value of the flag</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetUpperCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags)">
+            <summary>
+            Get the state of a upper case flag, from the upper case flag bits
+            and the active upper case flag bits.
+            If it is not active, return "Any"
+            </summary>
+            <param name="flag">Flag who's state is needed</param>
+            <returns>State of the requested flag</returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.SetMassRanges(System.Collections.Generic.IList{ThermoFisher.CommonCore.Data.Interfaces.IRangeAccess})">
+            <summary>
+            Set the table of mass ranges
+            </summary>
+            <param name="ranges">new ranges</param>
+            <exception cref="T:System.ArgumentNullException">Thrown on null parameter</exception>
+        </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.GetSourceFragmentationInfo(System.Int32)">
             <summary>
             The get source fragmentation info.
@@ -1093,8 +1148,14 @@
             The index.
             </param>
             <returns>
-            The <see cref="T:System.Double"/>.
+            The source fragmentation value at the given index.
             </returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanFilter.ThermoFisher#CommonCore#Data#Interfaces#IScanEventBase#GetExtensions">
+            <summary>
+            Gets extended properties
+            </summary>
+            <returns>extended methods</returns>
         </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.DataModel.WrappedScanStatistics">
             <summary>
@@ -2819,51 +2880,6 @@
             AS         T
             </summary>
         </member>
-        <member name="T:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType">
-            <summary>
-                Meta Filter
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.None">
-            <summary>
-            No meta filter.
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.Hcd">
-            <summary>
-            HCD meta filter.
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.Etd">
-            <summary>
-            ETD meta filter.
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.Cid">
-            <summary>
-            CID meta filter.
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.Uvpd">
-            <summary>
-            UVPD meta filter.
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.Msn">
-            <summary>
-            Msn meta filter. (ms2 or higher)
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.MsOrderMask">
-            <summary>
-            4 bits, (16 values). None set MSn = MS2+. All set MS15+
-            </summary>
-        </member>
-        <member name="F:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.MetaFilterType.MsnDMask">
-            <summary>
-            If set, MSn + order must be data dependent (such as MSn 3d, for order>= 3 and d ).
-            </summary>
-        </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.OffOnTypes">
             <summary>
                 For raw file types whose "Off" value is 0.
@@ -4529,12 +4545,34 @@
             The array of data with count bytes from startPos, or all bytes to end of view if smaller.
             </returns>
         </member>
+        <member name="T:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IReaderIssues">
+            <summary>
+            Flags issues which may occur when a read request cannot be fulfilled
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IReaderIssues.FileSizeExceeded">
+            <summary>
+            Does the read request go beyond the end of the file?
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IReaderIssues.MaxSize">
+            <summary>
+            Max available data (only valid when FileSizeExceeded)
+            </summary>
+        </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IDisposableReader">
             <summary>
             The Disposable Reader interface.
             Extends the reader with IDisposable, 
             for readers which are mapped to a disposable object, such as a file.
             </summary>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IDisposableReader.ReaderIssues">
+            <summary>
+            Optional, report any issues when attempting to create a reader for data
+            </summary>
+            <returns>Issues found with the read request.
+            By default, this should have "FileSizeExceeded" false.</returns>
         </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IErrorLog">
             <summary>
@@ -5288,7 +5326,7 @@
             Gets the wideband.
             </summary>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32,System.IFormatProvider,System.String)">
             <summary>
             To the automatic filter string.
             </summary>
@@ -5296,6 +5334,8 @@
             <param name="massPrecision">The mass precision.</param>
             <param name="charsMax">The chars maximum.</param>
             <param name="energyPrecision">The energy precision.</param>
+            <param name="formatProvider">numeric format (culture)</param>
+            <param name="listSeparator">culture specific list separator (',' if not specified)</param>
             <returns>Auto filter string.</returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent.GetRunHeaderFilterMassPrecision">
@@ -5523,6 +5563,31 @@
         <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IScanEventEdit.CompensationVoltageType">
             <summary>
             Gets or sets the compensation voltage type.
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IScanEventEdit.UpperCaseFlags">
+            <summary>
+            Extends flag getter for upper case flags with a setter
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IScanEventEdit.LowerCaseFlags">
+            <summary>
+            Extends flag getter for lower case flags with a setter
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IScanEventEdit.UpperCaseApplied">
+            <summary>
+            Extends "flag applied" getter for upper case flags with a setter
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IScanEventEdit.LowerCaseApplied">
+            <summary>
+            Extends "flag applied" getter for lower case flags with a setter
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IScanEventEdit.MassRanges">
+            <summary>
+            Gets or sets the mass ranges.
             </summary>
         </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawObjectBase">
@@ -8540,7 +8605,7 @@
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.FileIoStructs.ScanEventInfo.ScanEventInfoStruct.GetHash4">
             <summary>
-            A method which precicely merges 5 small (less than 6 bit) flags into a unique 32 bit code
+            A method which precisely merges 5 small (less than 6 bit) flags into a unique 32 bit code
             Then adds the "scan type index" as a second 32 bits
             For faster sorting
             </summary>
@@ -9019,10 +9084,18 @@
         </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.FilterParserFactory">
             <summary>
-            Tool to create a parser, for validating filter strings
+            Tool to create a parser, for validating and filter strings
+            creating an interface to access filter features,
+            for a given locale
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.FilterParserFactory.CreateFilterParser">
+            <summary>
+            Create a parser, for validating filter strings
+            </summary>
+            <returns>An interface to validate filter strings</returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.FilterParserFactory.CreateFilterParser(System.String)">
             <summary>
             Create a parser, for validating filter strings
             </summary>
@@ -9042,6 +9115,11 @@
         <member name="P:ThermoFisher.CommonCore.RawFileReader.FilterParserFactory.FilterParserWrapper.MassPrecision">
             <summary>
             Gets or sets the precision expected for mass values
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.FilterParserFactory.FilterParserWrapper.FormatProvider">
+            <summary>
+            Format for localization
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.FilterParserFactory.FilterParserWrapper.GetFilterFromString(System.String)">
@@ -12491,7 +12569,7 @@
         <member name="T:ThermoFisher.CommonCore.RawFileReader.Readers.DataFileAccessMode">
             <summary>
             Data File access mode.
-            These are based on modes for "memory mapped" files on widnows,
+            These are based on modes for "memory mapped" files on windows,
             but are applied as appropriate to all readers
             </summary>
         </member>
@@ -12522,12 +12600,21 @@
         </member>
         <member name="F:ThermoFisher.CommonCore.RawFileReader.Readers.DataFileAccessMode.Global">
             <summary>
-            Fir "windows global" objects. May npt apply to other OS or file types.
+            For "windows global" objects. May npt apply to other OS or file types.
             Prefixing the file mapping object names with "Global\" allows processes to communicate with each other 
             even if they are in different terminal server sessions. (use mainly in Acquisition)
             This requires that the first process must have the SeCreateGlobalPrivilege privilege.
             without prefixing the file mapping object names with "Global\", the sharing named memory is visible to 
             local process
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.RawFileReader.Readers.DataFileAccessMode.PermitMissingData">
+            <summary>
+            Allow a data view to include less bytes than requested, when the request would be longer than the files size
+            Note: Unlike most options, this is not related to any feature in Windows.
+            If this attribute is not set, and requested data is not available, then an exception should be thrown.
+            This can be used for non critical data (such as logs). If calling code sets this, it must examine the results
+            and intelligently handle missing records.
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.RawFileReader.Readers.DataFileAccessMode.OpenRead">
@@ -14472,6 +14559,11 @@
             Gets the set of descriptors for this log
             </summary>
         </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.ILogDecoder.Available">
+            <summary>
+            Get the available bytes
+            </summary>
+        </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.ILogDecoder.GetValue(System.Int64@,ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.DataDescriptor)">
             <summary>
             Get the value of a field, with minimal decoding
@@ -14541,7 +14633,7 @@
             </param>
             <returns>The value, as the nearest .net type</returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.LabelValueBlob.ReadLabelValuePairs(ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.ILogDecoder)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.LabelValueBlob.ReadLabelValuePairs(ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.ILogDecoder,System.Boolean)">
             <summary>
                 The method checks the cache to see if the label value pairs have been read. If not, it will read them and
                 use the Data Descriptors to decipher them, cache them, and returns them.
@@ -14549,6 +14641,7 @@
             <param name="decoder">
             The log reader.
             </param>
+            <param name="validateReads">data stream may not contain all records. Validate each read</param>
             <returns>
                 The <see cref="T:System.Collections.Generic.List`1" /> of label value pairs.
             </returns>
@@ -14629,6 +14722,11 @@
         <member name="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.LogDecoder">
             <summary>
             Decodes values in logs (status logs, tune method logs, etc.)
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.LogDecoder.Available">
+            <summary>
+            Number of bytes that can be read (from the stream start offset)
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.LogDecoder.#ctor(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IMemoryReader,ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.DataDescriptors)">
@@ -22185,11 +22283,6 @@
             Gets the mass calibrators.
             </summary>
         </member>
-        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Filter.ThermoFisher#CommonCore#RawFileReader#Facade#Interfaces#IRawFileReaderScanEvent#MassRanges">
-            <summary>
-            Gets the mass ranges.
-            </summary>
-        </member>
         <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Filter.MultiPhotonDissociation">
             <summary>
             Gets the multi photon dissociation.
@@ -22326,7 +22419,7 @@
             Gets the wideband.
             </summary>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Filter.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Filter.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32,System.IFormatProvider,System.String)">
             <summary>
             Convert to automatic filter string.
             </summary>
@@ -22334,6 +22427,8 @@
             <param name="massPrecision">The mass precision.</param>
             <param name="charsMax">The chars maximum.</param>
             <param name="energyPrecision">The energy precision.</param>
+            <param name="formatProvider">The (number) format for the current culture</param>
+            <param name="listSeparator">list separator for localization</param>
             <returns>The filter string</returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Filter.GetRunHeaderFilterMassPrecision">
@@ -22354,6 +22449,32 @@
             <returns>
             The <see cref="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Reaction"/>.
             </returns>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.IFilterExtensions.UpperCaseFlags">
+            <summary>
+            On off state for upper case flags
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.IFilterExtensions.LowerCaseFlags">
+            <summary>
+            On off state for lower case flags
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.IFilterExtensions.UpperCaseApplied">
+            <summary>
+            When constructed from a filter, features are "applied" when the code appears
+            for example: there is Q or !Q in the filter
+            The "on off" state would be on for "Q" and off for "!Q".
+            The "on/off" state has no meaning for a filter when not applied.
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.IFilterExtensions.LowerCaseApplied">
+            <summary>
+            When constructed from a filter, features are "applied" when the code appears
+            for example: there is q or !q in the filter
+            The "on off" state would be on for "q" and off for "!q".
+            The "on/off" state has no meaning for a filter when not applied.
+            </summary>
         </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent">
             <summary>
@@ -22429,6 +22550,21 @@
             This version uses 1.0E-6 for the tolerance.
             </summary>
             <param name="other">An object to compare with this object.</param>
+            <returns>
+            A value that indicates the relative order of the objects being compared. The return value has the following
+            meanings: Value Meaning Less than zero This object is less than the <paramref name="other" /> parameter.Zero This
+            object is equal to <paramref name="other" />. Greater than zero This object is greater than
+            <paramref name="other" />.
+            </returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent.CompareSmart(ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent,System.Boolean,System.Double)">
+            <summary>
+            Compares the current object with another object of the same type.
+            
+            </summary>
+            <param name="other">An object to compare with this object.</param>
+            <param name="usePrecursorTolerance">tolerance applied to mass ranges</param>
+            <param name="toleranceFactor">when "usePrecursorTolerance" the tolerance is multiplied by this factor</param>
             <returns>
             A value that indicates the relative order of the objects being compared. The return value has the following
             meanings: Value Meaning Less than zero This object is less than the <paramref name="other" /> parameter.Zero This
@@ -22609,12 +22745,13 @@
             <param name="i">The i.</param>
             <param name="value">The d value.</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent.CompareReactions(ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent,System.Double)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent.CompareReactions(ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent,System.Double,System.Double)">
             <summary>
             Compares the reactions.
             </summary>
             <param name="other">The other reactions.</param>
             <param name="filterMassResolution">The filter mass resolution.</param>
+            <param name="massRangeTolerance">tolerance applied to mass ranges</param>
             <returns>Standard comparison result</returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterScanEvent.ScanEventToFilter(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Boolean)">
@@ -22745,12 +22882,27 @@
         </member>
         <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.MetaFilters">
             <summary>
-            Gets or sets the meta filters. (ETD, CID, HCD)
+            Gets or sets the meta filters. (ETD, CID, HCD, UVPD, EID)
             </summary>
         </member>
         <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.MassPrecision">
             <summary>
             Sets the mass precision.
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.FormatProvider">
+            <summary>
+            format for localization
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.ListSeparator">
+            <summary>
+            Separator for list of values such as "cats, dogs"
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.DecimalSeparator">
+            <summary>
+            Separator for decimal point, such as "34.67"
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.GetFilterFromString(System.String)">
@@ -22831,7 +22983,7 @@
             Parse one token
             </summary>
             <param name="token">The token.</param>
-            <param name="setFlag">if set to <c>true</c> [set flag].</param>
+            <param name="featureAlreadySet">This is "true" if this feature has already been set</param>
             <param name="names">The names.</param>
             <param name="setMode">The set mode.</param>
             <returns>updated parse state</returns>
@@ -22895,6 +23047,45 @@
             <returns>
             The state (Bad on failure to parse)
             </returns>
+        </member>
+        <member name="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.TokenCategory">
+            <summary>
+            to build a lookup dictionary of various tables
+            An enum is used to indicate which table a string belongs to (such as a "detector type" or a "source type").
+            Only needed where:
+            <c>
+            * A list of exclusive items maps to an enum
+            * A single flag has multiple characters (such as lock or sps)
+            </c>
+            Some (legacy) names me be obsoleted by a list.
+            Most items with only 1 string act the same as single char On/Off types, allowing a "!' prefix
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.TokenWithCategory.Category">
+            <summary>
+            which list does ths belong to?
+            (such as the string Corona may be in the Beer category.)
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.TokenWithCategory.EnumValue">
+            <summary>
+            Enum numerical value within this category. For example suppose we have "enum Beer: Bud, Corona"
+            then Bud would be EnumValue 0 and Corona EnumValue 1
+            </summary>
+        </member>
+        <member name="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.FlagNames">
+            <summary>
+            List of available single character flag names
+            Names which are part of a another list are commented out
+            (not available to be parsed as a letter code with "!" option)
+            for example, c=centroid is part of the list "c,p" where p is Profile
+            so you cannot have "both c and p" or "!c" etc.
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser._upperCaseMapping">
+            <summary>
+            Flag lookup table for "character offset from upper case A".
+            </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.ParseToken(ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.FilterStringParseState,System.String@)">
             <summary>
@@ -22974,7 +23165,7 @@
             <param name="value">Value decoded</param>
             <param name="whiteSpaceOk">True if trailing space is permitted</param>
             <param name="precision">Permitted precision</param>
-            <param name="rangeSeperator">Character which may appear between two numbers representing a range</param>
+            <param name="rangeSeparator">Character which may appear between two numbers representing a range</param>
             <returns>Parse state, which can be bad on invalid, Next otherwise</returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.SimpleDoubleAtDouble(System.Char[],System.Int32@,System.Int32@,System.Double@,System.Double@,System.Boolean,System.Boolean)">
@@ -23118,25 +23309,6 @@
             <param name="precision">Decimal precision</param>
             <returns>Parse state. Will be Bad on parse error, Next on valid parse</returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.ParseScanMode(System.String@,System.Boolean@,System.String[])">
-            <summary>
-            convert the scan mode
-            in the syntax most of these are followed by an MS order, some not
-            for example: Q1MS is always MS1
-            </summary>
-            <param name="token">
-            The token.
-            </param>
-            <param name="setFlag">
-            The set flag.
-            </param>
-            <param name="names">
-            The names.
-            </param>
-            <returns>
-            The parse state
-            </returns>
-        </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.SetMsOrderAndNumPrecMasses(System.Int32,System.Int32)">
             <summary>
             set MS order and number of precursor masses.
@@ -23147,45 +23319,6 @@
             <param name="masses">
             The masses.
             </param>
-        </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.ParseMultiplex(System.String@,System.String[])">
-            <summary>
-            Parse multiplex.
-            </summary>
-            <param name="token">
-            The token.
-            </param>
-            <param name="names">
-            The possible names.
-            </param>
-            <returns>
-            The parse state
-            </returns>
-        </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.ParseMsOrder(System.String@)">
-            <summary>
-            Parse the MS order <c>(ms, ms2 etc.)</c>
-            </summary>
-            <param name="token">
-            The token.
-            </param>
-            <returns>
-            The parse state.
-            </returns>
-        </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.ParseDetector(System.String@,System.String[])">
-            <summary>
-            Parse detector. <c>det=</c>
-            </summary>
-            <param name="token">
-            The token.
-            </param>
-            <param name="names">
-            The names.
-            </param>
-            <returns>
-            The parse state
-            </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.FilterStringParser.ParsePrecursorMass(System.String@)">
             <summary>
@@ -24243,7 +24376,7 @@
                 The mass precision
             </returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32,System.IFormatProvider,System.String)">
             <summary>
                 Convert to auto filter string.
             </summary>
@@ -24259,19 +24392,21 @@
             <param name="energyPrecision">
                 The energy precision.
             </param>
+            <param name="formatProvider">format for current culture</param>
+            <param name="listSeparator">list separator for localization</param>
             <returns>
                 The <see cref="T:System.String" />.
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.Load(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IMemoryReader,System.Int64,System.Int32)">
             <summary>
-                Load (from file).
+            Load (from file).
             </summary>
             <param name="viewer">The viewer (memory map into file).</param>
             <param name="dataOffset">The data offset (into the memory map).</param>
             <param name="fileRevision">The file revision.</param>
             <returns>
-                The number of bytes read
+            The number of bytes read
             </returns>
         </member>
         <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.ThermoFisher#CommonCore#Data#Interfaces#IScanEvent#AccurateMass">
@@ -24956,7 +25091,6 @@
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.CompareMassRanges(System.Collections.Generic.IReadOnlyList{ThermoFisher.CommonCore.RawFileReader.FileIoStructs.MassRangeStruct},System.Collections.Generic.IReadOnlyList{ThermoFisher.CommonCore.RawFileReader.FileIoStructs.MassRangeStruct},System.Double)">
             <summary>
                 The method compares two lists of mass ranges.
-                Tolerance is half of the passed in "filter mass resolution"
             </summary>
             <param name="list1">
                 The first list of mass ranges.
@@ -24964,7 +25098,7 @@
             <param name="list2">
                 The second list of mass ranges.
             </param>
-            <param name="filterMassResolution">Resolution (tolerance) for comparison</param>
+            <param name="tolerance">Resolution (tolerance) for comparison</param>
             <returns>
                 Return an <see cref="T:System.Int32" /> that has one of three values:
                 <list type="table">
@@ -25013,7 +25147,7 @@
                 </list>
             </returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormulateAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.Int32,System.Int32,System.Int32)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormulateAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.Int32,System.Int32,System.Int32,System.IFormatProvider,System.String)">
             <summary>
                 formulate auto filter string.
             </summary>
@@ -25032,6 +25166,8 @@
             <param name="energyPrecision">
                 The energy precision.
             </param>
+            <param name="formatProvider">numeric formatting culture</param>
+            <param name="listSeparator">list separator for localization</param>
             <returns>
                 The filter as a string
             </returns>
@@ -25072,6 +25208,20 @@
                 The string to append.
             </param>
         </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.AppendString(System.Text.StringBuilder,ThermoFisher.CommonCore.Data.FilterEnums.TriState,System.String)">
+            <summary>
+                The method appends the specified string to the result.
+            </summary>
+            <param name="result">
+                The result.
+            </param>
+            <param name="parameter">
+                The value of the parameter, such as "X is off" to show "!x"
+            </param>
+            <param name="append">
+                The string to append. (such as "x' if the parameter if for the token 'x'
+            </param>
+        </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.DuplicateMassRangeList(ThermoFisher.CommonCore.RawFileReader.FileIoStructs.MassRangeStruct[])">
             <summary>
                 duplicate a list of mass range.
@@ -25093,7 +25243,7 @@
             </param>
             <param name="accMassType">Type to format</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatCompensationVoltage(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatCompensationVoltage(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.IFormatProvider)">
             <summary>
                 The format compensation voltage.
             </summary>
@@ -25102,6 +25252,7 @@
             </param>
             <param name="scanEvent">The scan event to format</param>
             <param name="energyPrecisionFmt">Precision for energy values</param>
+            <param name="formatProvider">format for localization</param>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatDependentDataFlag(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.IsDependent)">
             <summary>
@@ -25112,7 +25263,7 @@
             </param>
             <param name="dependent">The value to format</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatDetector(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatDetector(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.IFormatProvider)">
             <summary>
                 The method formats the detector string.
             </summary>
@@ -25121,9 +25272,10 @@
             </param>
             <param name="scanEvent">Scan event to format</param>
             <param name="energyPrecisionFmt">Precision for energy values</param>
+            <param name="formatProvider">format for localization</param>
             Indicates that the string is for an Auto Filter.
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatElectronCaptureDissociationType(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatElectronCaptureDissociationType(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.IFormatProvider)">
             <summary>
                 The method format electron capture dissociation type.
             </summary>
@@ -25132,6 +25284,7 @@
             </param>
             <param name="scanEvent">event to format</param>
             <param name="energyPrecisionFmt">precision for energy values</param>
+            <param name="formatProvider">format for localization</param>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatFreeRegion(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.FreeRegions)">
             <summary>
@@ -25151,7 +25304,7 @@
             </param>
             <param name="ionizationMode">The ionization mode</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatMassRanges(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatMassRanges(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.String,System.IFormatProvider,System.String)">
             <summary>
                 The method formats the mass ranges.
             </summary>
@@ -25160,9 +25313,11 @@
             </param>
             <param name="scanEvent">The event to format</param>
             <param name="massPrecisionFmt">Precision for precursor mass</param>
-            <param name="engeryPrecisionFmt">Precision for energy</param>
+            <param name="energyPrecisionFmt">Precision for energy</param>
+            <param name="formatProvider">culture specific number formatting</param>
+            <param name="listSeparator">list separator for localization</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatMsOrder(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatMsOrder(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.String,System.IFormatProvider)">
             <summary>
                 The method formats the MS order.
             </summary>
@@ -25171,9 +25326,10 @@
             </param>
             <param name="scanEvent">The event to format</param>
             <param name="massPrecisionFmt">Mass precision to use</param>
-            <param name="engeryPrecisionFmt">Precision for activation energy</param>
+            <param name="energyPrecisionFmt">Precision for activation energy</param>
+            <param name="formatProvider">format for localization</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatMultiPhotonDissociationType(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatMultiPhotonDissociationType(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.IFormatProvider)">
             <summary>
                 The method formats the multi photon dissociation type.
             </summary>
@@ -25182,6 +25338,7 @@
             </param>
             <param name="scanEvent">Event to format</param>
             <param name="energyPrecisionFmt">Precision for energy</param>
+            <param name="formatProvider">Format for localization</param>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatPolarity(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.PolarityTypes)">
             <summary>
@@ -25219,7 +25376,7 @@
             </param>
             <param name="sectorScan">Value to format</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatSourceFragmentation(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatSourceFragmentation(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.String,System.IFormatProvider)">
             <summary>
                 The method formats the source fragmentation.
             </summary>
@@ -25228,8 +25385,9 @@
             </param>
             <param name="scanEvent">Event to format</param>
             <param name="energyPrecisionFmt">Format for energy values</param>
+            <param name="format">format for localization</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatVoltageFeature(System.Text.StringBuilder,System.String,System.Collections.Generic.IList{System.Double},System.Int32,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.OnOffTypes,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.VoltageTypes,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormatVoltageFeature(System.Text.StringBuilder,System.String,System.Collections.Generic.IList{System.Double},System.Int32,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.OnOffTypes,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.VoltageTypes,System.String,System.IFormatProvider)">
             <summary>
                 format a voltage feature.
             </summary>
@@ -25242,7 +25400,7 @@
             <param name="srcFrags">
                 The source fragmentations.
             </param>
-            <param name="framentationsOffset">offet from start of fragmentations array</param>
+            <param name="fragmentationsOffset">offet from start of fragmentations array</param>
             <param name="voltEnable">
                 The volt enable.
             </param>
@@ -25252,8 +25410,9 @@
             <param name="code">
                 The code.
             </param>
+            <param name="formatProvider">format for localization</param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormulateAutoFilterReaction(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Reaction,System.String,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormulateAutoFilterReaction(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.Reaction,System.String,System.String,System.IFormatProvider)">
             <summary>
                 The method formulates auto filter reaction.
             </summary>
@@ -25269,6 +25428,7 @@
             <param name="energyPrecisionFmt">
                 Format for collision energy
             </param>
+            <param name="formatProvider">format for localization</param>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.FormulateScanDataType(System.Text.StringBuilder,ThermoFisher.CommonCore.RawFileReader.Facade.Constants.ScanFilterEnums.ScanDataTypes)">
             <summary>
@@ -25286,7 +25446,7 @@
             <param name="massAnalyzerTypes">The mass analyzer types.</param>
             <returns>the mass analyzer type filter string</returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.GetMassRangeString(System.Int32,ThermoFisher.CommonCore.RawFileReader.FileIoStructs.MassRangeStruct,System.Boolean,System.Collections.Generic.IList{System.Double},System.String,System.String)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent.GetMassRangeString(System.Int32,ThermoFisher.CommonCore.RawFileReader.FileIoStructs.MassRangeStruct,System.Boolean,System.Collections.Generic.IList{System.Double},System.String,System.String,System.IFormatProvider)">
             <summary>
                 Convert the mass range to string.
             </summary>
@@ -25299,7 +25459,7 @@
             <param name="isDissociation">
                 The is dissociation.
             </param>
-            <param name="srcFragVals">
+            <param name="srcFragValues">
                 The source fragmentation values.
             </param>
             <param name="massPrecisionFmt">
@@ -25308,6 +25468,7 @@
             <param name="energyPrecisionFmt">
                 The energy precision format.
             </param>
+            <param name="formatProvider">numeric format localization</param>
             <returns>
                 The <see cref="T:System.String" />.
             </returns>
@@ -25379,7 +25540,7 @@
             The scan event.
             </param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventDecorator.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventDecorator.ToAutoFilterString(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IRawFileReaderScanEvent,System.Int32,System.Int32,System.Int32,System.IFormatProvider,System.String)">
             <summary>
             To the automatic filter string.
             </summary>
@@ -25387,6 +25548,8 @@
             <param name="massPrecision">The mass precision.</param>
             <param name="charsMax">The chars maximum.</param>
             <param name="energyPrecision">The energy precision.</param>
+            <param name="formatProvider">localized number format</param>
+            <param name="listSeparator"></param>
             <returns>Auto filter string.</returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventDecorator.GetRunHeaderFilterMassPrecision">
@@ -25659,6 +25822,44 @@
             <summary>
             Gets or sets the source fragmentations.
             </summary>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventDecorator.SetLowerFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags,ThermoFisher.CommonCore.Data.FilterEnums.TriState)">
+            <summary>
+            Set the state of a lower case flag.
+            On: Flag applied On
+            Off: Flag applied Off
+            Any: Flag not used (not applied and off)
+            </summary>
+            <param name="flag"></param>
+            <param name="value"></param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventDecorator.GetLowerFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags)">
+            <summary>
+            Get the state of a lower case flag, from the lower case flag bits and the active flag bits.
+            If it is not active, return "Any"
+            </summary>
+            <param name="flag"></param>
+            <returns></returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventDecorator.SetUpperFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags,ThermoFisher.CommonCore.Data.FilterEnums.TriState)">
+            <summary>
+            Set the state of a upper case flag.
+            On: Flag applied On
+            Off: Flag applied Off
+            Any: Flag not used (not applied and off)
+            </summary>
+            <param name="flag"></param>
+            <param name="value"></param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventDecorator.GetUpperFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags)">
+            <summary>
+            Get the state of a upper case flag, from the lower case flag bits and the active flag bits.
+            If it is not active, return "Any"
+            </summary>
+            <param name="flag"></param>
+            <returns></returns>
         </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEventEditor">
             <summary>
@@ -25982,7 +26183,7 @@
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.TrailerScanEvents.UniqueScanEventInitializer(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IMemoryReader,System.Int64,System.Int32,System.Byte[])">
-            <summary>Uniques the scan event initializer.</summary>
+            <summary>Initialize the table of unique scan events.</summary>
             <param name="viewer">The viewer.</param>
             <param name="startPos">The start position.</param>
             <param name="fileRevision">The file revision.</param>
@@ -26001,7 +26202,7 @@
             <param name="uniqueScanEventIndicesBuffer">the saved unique event indexes tables in byte array</param>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.TrailerScanEvents.UniqueScanEventInitializer(ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent[],System.Collections.Generic.SortedSet{ThermoFisher.CommonCore.RawFileReader.StructWrappers.Scan.ScanEvent},System.Int32,System.Int32,System.Collections.Generic.List{System.ValueTuple{System.Int32,System.Int64,System.Int64}})">
-            <summary>Uniques the scan event initializer.</summary>
+            <summary>Initializes the table of unique scan events.</summary>
             <param name="batchEvents">The batch events.</param>
             <param name="scanEventsSet">The scan events set.</param>
             <param name="current">The current index.</param>
@@ -27558,7 +27759,7 @@
             <summary>
             Gets the compound name by scan filter.
             </summary>
-            <param name="scanFilterstring">The scan filter string.</param>
+            <param name="scanFilterString">The scan filter string.</param>
             <returns>The compound names</returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.MassSpecDevice.GetCompoundNames">
@@ -27636,7 +27837,7 @@
             The scan event.
             </param>
             <param name="subRangeReader">(fast) reader for a batch of scans: optional</param>
-            <param name="zeroPadding">forces zero values bwteeen profile peaks</param>
+            <param name="zeroPadding">forces zero values between profile peaks</param>
             <returns>
             The <see cref="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.Packets.IMsPacket"/>.
             </returns>
@@ -28203,13 +28404,14 @@
             Thrown if we cannot get the event.
             </exception>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.MassSpecDevice.GetValidatedTrailerExtraBlob(System.Int32)">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.MassSpecDevice.GetValidatedTrailerExtraBlob(System.Int32,System.Boolean@)">
             <summary>
             The get validated trailer extra blob.
             </summary>
             <param name="scanNumber">
             The scan number.
             </param>
+            <param name="validateReads">This is set where the stream doesn't have enough data for the record count</param>
             <returns>
             The <see cref="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.GenericMaps.LabelValueBlob"/>.
             </returns>
@@ -28365,6 +28567,11 @@
             Gets or sets the noise data - noise and baseline.
             </summary>
         </member>
+        <member name="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.MassSpecDevice.SmartFilterComparer">
+            <summary>
+            Provides additional rules to compare events, for auto filter.
+            </summary>
+        </member>
         <member name="T:ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.MassSpecDevice.EventConvert">
             <summary>
             Class to permit parallel conversion of scan events.
@@ -28449,6 +28656,12 @@
             <summary>
             Gets or sets a value indicating whether record numbers start from zero.
             For example: MS scans start from 1.
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.RecordBufferManager.Available">
+            <summary>
+            Gets the number of bytes which can be read from this data area.
+            This may not be the length of the containing file or other object.
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.RecordBufferManager.#ctor(ThermoFisher.CommonCore.RawFileReader.Facade.Interfaces.IReadWriteAccessor,System.Int64,System.Int32,System.Int32,ThermoFisher.CommonCore.RawFileReader.StructWrappers.VirtualDevices.IRecordRangeProvider,System.Boolean,System.Boolean)">
@@ -29338,7 +29551,7 @@
             File doesn't exist:  + fileName
             </exception>
         </member>
-        <member name="M:ThermoFisher.CommonCore.RawFileReader.Utilities.Validate64Bit">
+        <member name="M:ThermoFisher.CommonCore.RawFileReader.Utilities.Validate64Bit(System.String)">
             <summary>
             Validate64s the bit.
             </summary>

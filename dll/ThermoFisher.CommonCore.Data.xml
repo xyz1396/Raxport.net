@@ -85,7 +85,7 @@
             Create an analyzer for raw data.
             This can be created from several interfaces.
             An earlier version expected IRawDataPlus, which implements IDetectorReaderPlus.
-            This version requires IDetectorReaderPlus, then exammines which known derivation
+            This version requires IDetectorReaderPlus, then examines which known derivation
             of this has been provided.
             If the provided object implements IRawDataPlus, then the code operates as before (RawPlusMode)
             </summary>
@@ -399,19 +399,19 @@
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.AutoFilterPlus">
             <summary>
-            Autofilter extensions for raw files
+            Auto filter extensions for raw files
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.AutoFilterPlus.EnhancedAutoFilter(ThermoFisher.CommonCore.Data.Interfaces.IRawDataPlus)">
             <summary>
-            Create an enhanced autofilter for this raw file
+            Create an enhanced auto filter for this raw file
             </summary>
             <param name="file">raw file</param>
             <returns>enhanced auto filter</returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.AutoFilterPlus.EnhancedAutoFilter(ThermoFisher.CommonCore.Data.Interfaces.IRawDataPlus,System.Double,System.Double)">
             <summary>
-            Create an enhanced autofilter for this raw file, using scans over a specific time range.
+            Create an enhanced auto filter for this raw file, using scans over a specific time range.
             </summary>
             <param name="file">raw file</param>
             <param name="startTime">start retention time</param>
@@ -420,7 +420,7 @@
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.AutoFilterPlus.EnhancedAutoFilter(ThermoFisher.CommonCore.Data.Interfaces.IRawDataPlus,System.Double,System.Double,ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode,System.Int32)">
             <summary>
-            Create an enhanced autofilter for this raw file, using scans over a specific time range.
+            Create an enhanced auto filter for this raw file, using scans over a specific time range.
             </summary>
             <param name="file">raw file</param>
             <param name="startTime">start retention time</param>
@@ -433,7 +433,7 @@
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.AutoFilterPlus.EnhancedAutoFilter(ThermoFisher.CommonCore.Data.Interfaces.IRawDataPlus,ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode,System.Int32)">
             <summary>
-            Create an enhanced autofilter for this raw file, using scans over a specific time range.
+            Create an enhanced auto filter for this raw file, using scans over a specific time range.
             </summary>
             <param name="file">raw file</param>
             <param name="mode">Optional: Determine how precursor tolerance is handled.
@@ -459,7 +459,7 @@
             <summary>
             Searches for the activation types used.
             Adds "Activation type" to the list, for MS/MS data (MS2 or above).
-            This can find CID, HCD, ETD, UVPD
+            This can find CID, HCD, ETD, UVPD, EID
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.AutoFilterPlus.AutoFilterEnhanced.Add(System.String)">
@@ -499,7 +499,7 @@
             <summary>
             Add all unique filter groups (auto filter).
             </summary>
-            <param name="mustContain">If this is not empty: The filters must all contan this sub-filter.
+            <param name="mustContain">If this is not empty: The filters must all contain this sub-filter.
             For example "d" for "only return data dependent"</param>
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.AutoFilterPlus.AutoFilterEnhanced.MergeCvValues">
@@ -4989,8 +4989,8 @@
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Business.GenericDataTypes.Bool">
             <summary>
-            Alternate name for TRUEFALSE (0= false, 1 = true).
-            This alternate suggeted for consistent use of Bool type in logs.
+            Alternate name for TRUEFALSE (0= False, 1 = True).
+            This alternate suggested for consistent use of Bool type in logs.
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Business.GenericDataTypes.YESNO">
@@ -6413,6 +6413,18 @@
             Gets or sets a value indicating whether a number should be displayed in scientific notation
             </summary>
         </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.HeaderItem.SetCulture(System.String,System.String,System.String)">
+            <summary>
+            sets the localization.
+            ISO 639-1 standard language code.
+            By default "CultureInfo.InvariantCulture" will be used.
+            The default applies for null, empty or not found cuture.
+            </summary>
+            <param name="culture">Culture name</param>
+            <param name="decimalSeparator">override decimal separator from culture, unless empty (default)</param>
+            <param name="listSeparator">override list separator from culture, unless empty (default)</param>
+            <returns>true if requested culture was selected (or was empty). False on exception finding the culture</returns>
+        </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.HeaderItem.#ctor">
             <summary>
             Initializes a new instance of the <see cref="T:ThermoFisher.CommonCore.Data.Business.HeaderItem"/> class.
@@ -6450,13 +6462,36 @@
             True if this specifies that "variable length" records are used.
             </returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.HeaderItem.FormatValue(System.String)">
+        <member name="M:ThermoFisher.CommonCore.Data.Business.HeaderItem.FormatRawValue(System.Object,System.Boolean,System.String)">
+            <summary>
+            Formats the specified value per the current header's settings.
+            </summary>
+            <param name="value">
+            The value, as a object. Object type must match the expected type for this header.
+            </param>
+            <param name="analyzeStrings">If set: reformat numbers found in strings.
+            Logs contain strings which may have us numeric values in them
+            look for common forms and reformat in the locale needed.</param>
+            <param name="listSeparators">When analyzing strings, accept any of these characters as 
+            list separators, for lists of numbers.
+            Default: expect comma ","</param>
+            <returns>
+            The formatted value.
+            </returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.HeaderItem.FormatValue(System.String,System.Boolean,System.String)">
             <summary>
             Re-formats the specified value per the current header's settings.
             </summary>
             <param name="value">
             The value, as a string.
             </param>
+            <param name="analyzeStrings">If set: reformat numbers found in strings.
+            Logs contain strings which may have US numeric values in them
+            look for common forms and reformat in the locale needed.</param>
+            <param name="listSeparators">When analyzing strings, accept any of these characters as 
+            list separators, for lists of numbers.
+            Default: expect comma ","</param>
             <returns>
             The formatted value.
             </returns>
@@ -6479,6 +6514,17 @@
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.HeaderItem.FormatNumericValue(System.String)">
+            <summary>
+            Format a numeric value.
+            </summary>
+            <param name="value">
+            The value to format.
+            </param>
+            <returns>
+            The formatted numeric value.
+            </returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.HeaderItem.FormatNumericObject(System.Object)">
             <summary>
             Format a numeric value.
             </summary>
@@ -7269,18 +7315,6 @@
             </param>
             <param name="inner">
             Trapped inner exception
-            </param>
-        </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.InvalidFilterFormatException.#ctor(System.Runtime.Serialization.SerializationInfo,System.Runtime.Serialization.StreamingContext)">
-            <summary>
-            Initializes a new instance of the <see cref="T:ThermoFisher.CommonCore.Data.Business.InvalidFilterFormatException"/> class. 
-            Construct an exception, with serialization.
-            </summary>
-            <param name="info">
-            Data to serialize this object
-            </param>
-            <param name="context">
-            Stream for serializing
             </param>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.IonRatioConfirmationMassSettings">
@@ -8438,6 +8472,40 @@
             The destination.
             </param>
         </member>
+        <member name="T:ThermoFisher.CommonCore.Data.Business.MetaFilterNames">
+            <summary>
+            The names of the meta filters, for activation types.
+            These are used to:
+            Parse filters.
+            Convert filters to string.
+            CID, HCD, ETD, UVPD, EID
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Business.MetaFilterNames.Cid">
+            <summary>
+            Display name of CID meta filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Business.MetaFilterNames.Hcd">
+            <summary>
+            Display name of HCD meta filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Business.MetaFilterNames.Etd">
+            <summary>
+            Display name of HCD meta filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Business.MetaFilterNames.Uvpd">
+            <summary>
+            Display name of HCD meta filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Business.MetaFilterNames.Eid">
+            <summary>
+            Display name of HCD meta filter
+            </summary>
+        </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.MSAnalogInstrument">
             <summary>
             Encapsulates information about MSAnalogInstrument.
@@ -8720,18 +8788,6 @@
             Trapped inner exception
             </param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.NewerFileFormatException.#ctor(System.Runtime.Serialization.SerializationInfo,System.Runtime.Serialization.StreamingContext)">
-            <summary>
-            Initializes a new instance of the <see cref="T:ThermoFisher.CommonCore.Data.Business.NewerFileFormatException"/> class. 
-            Construct an exception, with serialization.
-            </summary>
-            <param name="info">
-            Data to serialize this object
-            </param>
-            <param name="context">
-            Stream for serializing
-            </param>
-        </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.NoiseAndBaseline">
             <summary>
             Defines noise and baseline at a given mass
@@ -8786,18 +8842,6 @@
             Trapped inner exception
             </param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.NoSelectedDeviceException.#ctor(System.Runtime.Serialization.SerializationInfo,System.Runtime.Serialization.StreamingContext)">
-            <summary>
-            Initializes a new instance of the <see cref="T:ThermoFisher.CommonCore.Data.Business.NoSelectedDeviceException"/> class. 
-            Construct an exception, with serialization.
-            </summary>
-            <param name="info">
-            Data to serialize this object
-            </param>
-            <param name="context">
-            Stream for serializing
-            </param>
-        </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.NoSelectedMsDeviceException">
             <summary>
             Exception for raw data reading. Called when a MS specific method is made
@@ -8831,18 +8875,6 @@
             </param>
             <param name="inner">
             Trapped inner exception
-            </param>
-        </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.NoSelectedMsDeviceException.#ctor(System.Runtime.Serialization.SerializationInfo,System.Runtime.Serialization.StreamingContext)">
-            <summary>
-            Initializes a new instance of the <see cref="T:ThermoFisher.CommonCore.Data.Business.NoSelectedMsDeviceException"/> class. 
-            Construct an exception, with serialization.
-            </summary>
-            <param name="info">
-            Data to serialize this object
-            </param>
-            <param name="context">
-            Stream for serializing
             </param>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.ParallelChromatogramFactory">
@@ -10480,18 +10512,6 @@
             Trapped inner exception
             </param>
         </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.RequiresChromatographicDeviceException.#ctor(System.Runtime.Serialization.SerializationInfo,System.Runtime.Serialization.StreamingContext)">
-            <summary>
-            Initializes a new instance of the <see cref="T:ThermoFisher.CommonCore.Data.Business.RequiresChromatographicDeviceException"/> class. 
-            Construct an exception, with serialization.
-            </summary>
-            <param name="info">
-            Data to serialize this object
-            </param>
-            <param name="context">
-            Stream for serializing
-            </param>
-        </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.RunHeader">
             <summary>
             The run header.
@@ -10942,7 +10962,7 @@
             Object to read scans from a file
             </returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.Scan.FromFile(ThermoFisher.CommonCore.Data.Interfaces.IRawData,System.Int32)">
+        <member name="M:ThermoFisher.CommonCore.Data.Business.Scan.FromFile(ThermoFisher.CommonCore.Data.Interfaces.IRawData,System.Int32,System.IFormatProvider)">
             <summary>
             Create a scan object from a file and a scan number.
             </summary>
@@ -10952,6 +10972,7 @@
             <param name="scanNumber">
             Scan number to read
             </param>
+            <param name="formatProvider">defined culture, for number formatting (default Invariant)</param>
             <returns>
             The scan read, or null of the scan number if not valid
             </returns>
@@ -11190,7 +11211,7 @@
             True if it is basic profile type.
             </returns>
         </member>
-        <member name="M:ThermoFisher.CommonCore.Data.Business.Scan.CalcualteToleraceFactor(System.Int32,ThermoFisher.CommonCore.Data.Business.CentroidStream,System.Double,System.Double@,System.Boolean)">
+        <member name="M:ThermoFisher.CommonCore.Data.Business.Scan.CalculateToleranceFactor(System.Int32,ThermoFisher.CommonCore.Data.Business.CentroidStream,System.Double,System.Double@,System.Boolean)">
             <summary>
             Attempt to find the tolerance factor, from the base peak of a scan
             return "true" on fail.
@@ -11459,7 +11480,7 @@
             <summary>
             Fix the length of segment tables after a merge
             </summary>
-            <param name="scanSegements">
+            <param name="scanSegments">
             scan which will contain a merge
             </param>
             <param name="segments">
@@ -13172,6 +13193,12 @@
             The other.
             </param>
         </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerCaseFlags">
+            <inheritdoc />
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperCaseFlags">
+            <inheritdoc />
+        </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.#ctor">
             <summary>
             Initializes a new instance of the <see cref="T:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder"/> class.
@@ -13844,6 +13871,9 @@
             </returns>
             <exception cref="T:System.IndexOutOfRangeException">Will be thrown when index >= SourceFragmentationInfoCount</exception>
         </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.GetExtensions">
+            <inheritdoc />
+        </member>
         <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.GetSourceFragmentationMassRange(System.Int32)">
             <summary>
             Get the source fragmentation mass range, at a given index.
@@ -13918,6 +13948,219 @@
             <param name="other">
             The other event.
             </param>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerE">
+            <summary>
+            Gets or sets the lower case E flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerG">
+            <summary>
+            Gets or sets the lower case G flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerH">
+            <summary>
+            Gets or sets the lower case H flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerI">
+            <summary>
+            Gets or sets the lower case I flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerJ">
+            <summary>
+            Gets or sets the lower case J flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerK">
+            <summary>
+            Gets or sets the lower case IK flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerL">
+            <summary>
+            Gets or sets the lower case L flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerM">
+            <summary>
+            Gets or sets the lower case M flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerN">
+            <summary>
+            Gets or sets the lower case N flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerO">
+            <summary>
+            Gets or sets the lower case O flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerQ">
+            <summary>
+            Gets or sets the lower case Q flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerS">
+            <summary>
+            Gets or sets the lower case S flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerX">
+            <summary>
+            Gets or sets the lower case X flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.LowerY">
+            <summary>
+            Gets or sets the lower case Y flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperA">
+            <summary>
+            Gets or sets the upper case A flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperB">
+            <summary>
+            Gets or sets the upper case B flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperF">
+            <summary>
+            Gets or sets the upper case F flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperG">
+            <summary>
+            Gets or sets the upper case G flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperH">
+            <summary>
+            Gets or sets the upper case H flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperI">
+            <summary>
+            Gets or sets the upper case I flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperJ">
+            <summary>
+            Gets or sets the upper case J flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperK">
+            <summary>
+            Gets or sets the upper case K flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperL">
+            <summary>
+            Gets or sets the upper case L flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperM">
+            <summary>
+            Gets or sets the upper case M flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperN">
+            <summary>
+            Gets or sets the upper case N flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperO">
+            <summary>
+            Gets or sets the upper case O flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperQ">
+            <summary>
+            Gets or sets the upper case Q flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperR">
+            <summary>
+            Gets or sets the upper case R flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperS">
+            <summary>
+            Gets or sets the upper case S flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperT">
+            <summary>
+            Gets or sets the upper case T flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperU">
+            <summary>
+            Gets or sets the upper case U flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperV">
+            <summary>
+            Gets or sets the upper case V flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperW">
+            <summary>
+            Gets or sets the upper case W flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperX">
+            <summary>
+            Gets or sets the upper case X flag
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.UpperY">
+            <summary>
+            Gets or sets the upper case Y flag
+            </summary>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.GetLowerCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags)">
+            <inheritdoc />
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.GetLowerCaseSetting(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags)">
+            <summary>
+            Gets a value indicating whether a scan was performed with the indicated feature enabled.
+            These features appear as lower case letters, when converted to string (as a scan event). 
+            </summary>
+            <param name="flag">The flag to inspect</param>
+            <returns>value of the flag</returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.GetUpperCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags)">
+            <inheritdoc />
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.GetUpperCaseSetting(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags)">
+            <summary>
+            Gets a value indicating whether a scan was performed with the indicated feature enabled.
+            These features appear as upper case letters, when converted to string (as a scan event). 
+            </summary>
+            <param name="flag">The flag to inspect</param>
+            <returns>value of the flag</returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.SetUpperFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags,System.Boolean)">
+            <summary>
+            Set the state of a upper case flag. (true, if this scan uses the indicated feature)
+            </summary>
+            <param name="flag">Flag set set</param>
+            <param name="value">value of flag</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Business.ScanEventBuilder.SetLowerFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags,System.Boolean)">
+            <summary>
+            Set the state of a upper case flag. (true, if this scan uses the indicated feature)
+            </summary>
+            <param name="flag">Flag to set</param>
+            <param name="value">value of flag</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Business.ScanEventHelper">
             <summary>
@@ -16023,6 +16266,7 @@
             This offers higher performance, where numeric values are needed,
             as it avoids translation to and from strings.
             It is also designed for efficient copy of data from one file to another.
+            This can also be used for apps that need to localize numeric values.
             <c>
             Numeric values (where the header for this field returns "True" for IsNumeric)
             can always be cast up to double.
@@ -17125,6 +17369,181 @@
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.AccurateMass">
             <summary>
             Apply the accurate mass filter.
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerE">
+            <summary>
+            Apply the lower case E filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerG">
+            <summary>
+            Apply the lower case G filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerH">
+            <summary>
+            Apply the lower case H filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerI">
+            <summary>
+            Apply the lower case I filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerJ">
+            <summary>
+            Apply the lower case J filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerK">
+            <summary>
+            Apply the lower case K filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerL">
+            <summary>
+            Apply the lower case L filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerM">
+            <summary>
+            Apply the lower case M filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerN">
+            <summary>
+            Apply the lower case N filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerO">
+            <summary>
+            Apply the lower case O filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerQ">
+            <summary>
+            Apply the lower case Q filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerS">
+            <summary>
+            Apply the lower case S filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerX">
+            <summary>
+            Apply the lower case X filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.LowerY">
+            <summary>
+            Apply the lower case Y filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperA">
+            <summary>
+            Apply the upper case A filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperB">
+            <summary>
+            Apply the upper case B filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperF">
+            <summary>
+            Apply the upper case F filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperG">
+            <summary>
+            Apply the upper case G filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperH">
+            <summary>
+            Apply the upper case H filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperI">
+            <summary>
+            Apply the upper case I filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperJ">
+            <summary>
+            Apply the upper case J filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperK">
+            <summary>
+            Apply the upper case K filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperL">
+            <summary>
+            Apply the upper case L filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperM">
+            <summary>
+            Apply the upper case M filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperN">
+            <summary>
+            Apply the upper case N filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperO">
+            <summary>
+            Apply the upper case O filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperQ">
+            <summary>
+            Apply the upper case Q filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperR">
+            <summary>
+            Apply the upper case R filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperS">
+            <summary>
+            Apply the upper case S filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperT">
+            <summary>
+            Apply the upper case T filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperU">
+            <summary>
+            Apply the upper case U filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperV">
+            <summary>
+            Apply the upper case V filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperW">
+            <summary>
+            Apply the upper case W filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperX">
+            <summary>
+            Apply the upper case X filter
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterRule.UpperY">
+            <summary>
+            Apply the upper case Y filter
             </summary>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IAdvancedPacketData">
@@ -18276,7 +18695,7 @@
             <summary>
             Searches for the activation types used.
             Adds "Activation type" to the list, for MS/MS data (MS2 or above).
-            This can find CID, HCD, ETD, UVPD
+            This can find CID, HCD, ETD, UVPD, EID
             </summary>
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IEnhancedAutoFilter.AddEmptyFilter">
@@ -18718,7 +19137,7 @@
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IFilterWithString">
             <summary>
-            Defines a combination of plain text and interface defintions of filters.
+            Defines a combination of plain text and interface definitions of filters.
             </summary>
         </member>
         <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IFilterWithString.Filter">
@@ -18728,7 +19147,7 @@
         </member>
         <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IFilterWithString.ScanFilter">
             <summary>
-            Gets the scan filer (as accessable fields)
+            Gets the scan filer (as accessible fields)
             </summary>
         </member>
         <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IFilterWithString.NameOnly">
@@ -22376,9 +22795,99 @@
             Gets scanning information about a scan
             </summary>
         </member>
+        <member name="T:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy">
+            <summary>
+            This enum defines ways to extend the matching of "scanned mass ranges"
+            when attempting to group similar data dependent scans.
+            This is new in the .NET 8 version of common core.
+            "None" is the legacy behavior, (backwards compatible)
+            Percent options increase the "mass range" matching tolerance to be wider than the parent mass 
+            matching tolerance by the given %.
+            For example:
+            Data dependent Parent mass 100. Tolerance for match = +/- 0.2.
+            To include parent mass in next level MS scan, scan range may be expanded (say by 10%) to end 
+            at 110.
+            Suppose there is another parent, mass 100.2, just in range to match 100.
+            Mass range 10% higher gives 110.22.
+            If the mass limit is checked at "0.2" tolerance, then the "110" limit for the
+            earlier scan types doesn't match as "110.22" is greater than 110 + 0.2.
+            Suggested setting to solve this case "Percent20".
+            The mass limits cannot be ignored as the MS may be deliberately programmed to look at specific ranges.
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.None">
+            <summary>
+            No extension
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent10">
+            <summary>
+            Extend by 10%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent20">
+            <summary>
+            Extend by 20%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent30">
+            <summary>
+            Extend by 30%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent40">
+            <summary>
+            Extend by 40%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent50">
+            <summary>
+            Extend by 50%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent60">
+            <summary>
+            Extend by 60%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent70">
+            <summary>
+            Extend by 70%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent80">
+            <summary>
+            Extend by 80%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent90">
+            <summary>
+            Extend by 90%
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Percent100">
+            <summary>
+            Extend by 100% (double the tolerance)
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Factor3">
+            <summary>
+            Increase the tolerance by factor of 3
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Factor4">
+            <summary>
+            Increase the tolerance by factor of 4
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy.Factor5">
+            <summary>
+            Increase the tolerance by factor of 5
+            </summary>
+        </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode">
             <summary>
-            Determies how precision is handles when comparing filters
+            Determines how precision is handled when comparing filters
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode.Auto">
@@ -22397,6 +22906,29 @@
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode.Specified">
             <summary>
             A precision must be specified (decimal places)
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode.SpecifiedPrecisionMask">
+            <summary>
+            Mask, to check if precision is any value other than auto
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode.ExtendedDataDependentMatch">
+            <summary>
+            For data dependent scans, use a wider scan range match window
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode.FindPrecursorMidPoint">
+            <summary>
+            For a range of precursors, select a value near the center of the band.
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode.ScanRangeMatchExpansionMask">
+            <summary>
+            Mass limits at matched at 10% of the parent mass match per count for values (0-10).
+            So: MatchExpansion 8 will have an 80% larger tolerance for the target mass window
+            than the DD parent mass.
+            Values 11-15: Extend the tolerance by 1,2,5,10,20 Amu respectively.
             </summary>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IDetectorReaderPlus">
@@ -23227,7 +23759,7 @@
             No state is shared between instances of IDetectorReader.
             </summary>
             <param name="detector">Defines the type of detector and instance of that type (starting from 1)</param>
-            <param name="includeReferenceAndExceptionPeaks">Optional: When selecting an MS detecor, this will return
+            <param name="includeReferenceAndExceptionPeaks">Optional: When selecting an MS detector, this will return
             data from the reference compound when requesting scans. Default "false" as most
             analysis will not examine reference data</param>
             <returns>Access to method to read from 1 detector</returns>
@@ -24891,6 +25423,41 @@
             </returns>
             <exception cref="T:System.IndexOutOfRangeException">Will be thrown when index >= SourceFragmentationInfoCount</exception>
         </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanEventBase.GetExtensions">
+            <summary>
+            Get extended interface.
+            </summary>
+            <returns>extended event properties</returns>
+        </member>
+        <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IScanEventExtended">
+            <summary>
+            Add new upper and lower character properties
+            </summary>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanEventExtended.GetLowerCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags)">
+            <summary>
+            Gets the state of a lower case flag
+            </summary>
+            <param name="flag">requested flag</param>
+            <returns>state of flag</returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanEventExtended.GetUpperCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags)">
+            <summary>
+            Gets the state of an upper case flag
+            </summary>
+            <param name="flag">requested flag</param>
+            <returns>state of flag</returns>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanEventExtended.LowerCaseFlags">
+            <summary>
+            gets the full set of lower case filter flags
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanEventExtended.UpperCaseFlags">
+            <summary>
+            gets the full set of upper case filter flags
+            </summary>
+        </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IScanEvents">
             <summary>
             The ScanEvents interface.
@@ -24987,33 +25554,72 @@
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType">
             <summary>
-            Meta Filter
+            Meta Filter codes (32 bit flags).
+            The lower 7 bits are for "activation type meta filters" (5 used, 2 reserved).
+            This is defined as flags, as multiple features may be combined.
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.None">
             <summary>
-            No meta filter
+            No meta filter.
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.Hcd">
             <summary>
-            HCD meta filter
+            HCD meta filter.
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.Etd">
             <summary>
-            ETD meta filter
+            ETD meta filter.
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.Cid">
             <summary>
-            CID meta filter
+            CID meta filter.
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.Uvpd">
             <summary>
             UVPD meta filter.
             </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.Eid">
+            <summary>
+            EID meta filter.
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.Msn">
+            <summary>
+            Msn meta filter. (ms2 or higher)
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.MSnCountMask">
+            <summary>
+            These bits contain an ms order for an MSn filter request
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType.MsndMask">
+            <summary>
+            If set, MSn + order must be data dependent (such as MSn 3d, for order>= 3 and d ).
+            </summary>
+        </member>
+        <member name="T:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterExtensions">
+            <summary>
+            Helpers for meta filter encode/decode
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterExtensions.CountShift">
+            <summary>
+            The bit shift for the "count" for the MSn value
+            </summary>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.MetaFilterExtensions.MSnCount(ThermoFisher.CommonCore.Data.Interfaces.MetaFilterType)">
+            <summary>
+            Gets the MSn order of the meta filter
+            </summary>
+            <param name="filterType">Meta filter codes</param>
+            <returns>MSn order</returns>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter">
             <summary>
@@ -25082,6 +25688,8 @@
         <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.LocaleName">
             <summary>
             Gets or sets the locale name.
+            ISO 639-1 standard language code.
+            for example "en-us" for us English.
             This can be used to affect string conversion.
             </summary>
         </member>
@@ -25116,7 +25724,7 @@
             1 for "single value", 2 for "ramp" and 1 per mass range for "SIM".
             </summary>
         </member>
-        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SouceFragmentaionValueCount">
+        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SourceFragmentationValueCount">
             <summary>
             Gets the number of Source Fragmentation values.
             This is the number of values related to <c>sid</c> mode.
@@ -25128,7 +25736,7 @@
             Retrieves a source fragmentation value (sid) at 0-based index.
             </summary>
             <remarks>
-            Use <see cref="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SouceFragmentaionValueCount"/> to get the count of
+            Use <see cref="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SourceFragmentationValueCount"/> to get the count of
             source fragmentation values.
             </remarks>
             <param name="index">
@@ -25366,6 +25974,277 @@
             Gets or sets Compensation Voltage type filtering rule.
             </summary>
             <value>See <see cref="T:ThermoFisher.CommonCore.Data.FilterEnums.CompensationVoltageType"/> for possible values</value>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SetMassRanges(System.Collections.Generic.IList{ThermoFisher.CommonCore.Data.Interfaces.IRangeAccess})">
+            <summary>
+            Set the table of mass ranges
+            </summary>
+            <param name="ranges">List of mass ranges (which may be an empty list)</param>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SetReactions(System.Collections.Generic.IList{ThermoFisher.CommonCore.Data.Business.IReaction})">
+            <summary>
+            Sets the reaction table.
+            </summary>
+            <param name="reactions">
+            The set of reactions for this filter.
+            </param>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SetLowerFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags,ThermoFisher.CommonCore.Data.FilterEnums.TriState)">
+            <summary>
+            Set the state of a lower case flag.
+            On: Flag applied On
+            Off: Flag applied Off
+            Any: Flag not used (not applied and off)
+            </summary>
+            <param name="flag">Flag to set</param>
+            <param name="value">value of flag</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.SetUpperFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags,ThermoFisher.CommonCore.Data.FilterEnums.TriState)">
+            <summary>
+            Set the state of a upper case flag.
+            On: Flag applied On
+            Off: Flag applied Off
+            Any: Flag not used (not applied and off)
+            </summary>
+            <param name="flag">flag to set</param>
+            <param name="value">value of flag</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.GetLowerCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags)">
+            <summary>
+            Gets the state of a lower case filter flag
+            </summary>
+            <param name="flag">The flag to get</param>
+            <returns>The state of the requested flag</returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Interfaces.IScanFilter.GetUpperCaseFlag(ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags)">
+            <summary>
+            Gets the state of an upper case filter flag
+            </summary>
+            <param name="flag">The flag to get</param>
+            <returns>state of the requested flag</returns>
+        </member>
+        <member name="T:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags">
+            <summary>
+            define a set of additional flags
+            These map out to previously unused lower case letters
+            These can either be off (0) or on (1)
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerE">
+            <summary>
+            Lower case E flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerG">
+            <summary>
+            Lower case G flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerH">
+            <summary>
+            Lower case H flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerI">
+            <summary>
+            Lower case I flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerJ">
+            <summary>
+            Lower case J flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerK">
+             <summary>
+            Lower case K flag
+             </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerL">
+            <summary>
+            Lower case L flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerM">
+            <summary>
+            Lower case M flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerN">
+            <summary>
+            Lower case N flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerO">
+            <summary>
+            Lower case O flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerQ">
+            <summary>
+            Lower case Q flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerS">
+            <summary>
+            Lower case S flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerX">
+            <summary>
+            Lower case X flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.LowerCaseFilterFlags.LowerY">
+            <summary>
+            Lower case Y flag
+            </summary>
+        </member>
+        <member name="T:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags">
+            <summary>
+            Single letter flags, upper case
+            note that E (Enhanced) and Z (ZoomScan) are previously allocated
+            p,c,d are critical flags and so should have alternative meaning with different casing.
+            so 21 are used
+            32 available flags (8 groups of 4 in hex)
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperA">
+            <summary>
+            Upper case A Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperB">
+            <summary>
+            Upper case B Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperF">
+            <summary>
+            Upper case F Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperG">
+            <summary>
+            Upper case G Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperH">
+            <summary>
+            Upper case H Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperI">
+            <summary>
+            Upper case I Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperJ">
+            <summary>
+            Upper case J Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperK">
+            <summary>
+            Upper case K Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperL">
+            <summary>
+            Upper case L Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperM">
+            <summary>
+            Upper case M Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperN">
+            <summary>
+            Upper case N Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperO">
+            <summary>
+            Upper case O Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperQ">
+            <summary>
+            Upper case Q Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperR">
+            <summary>
+            Upper case R Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperS">
+            <summary>
+            Upper case S Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperT">
+            <summary>
+            Upper case T Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperU">
+            <summary>
+            Upper case U Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperV">
+            <summary>
+            Upper case V Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperW">
+            <summary>
+            Upper case W Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperX">
+            <summary>
+            Upper case X Flag
+            </summary>
+        </member>
+        <member name="F:ThermoFisher.CommonCore.Data.Interfaces.UpperCaseFilterFlags.UpperY">
+            <summary>
+            Upper case Y Flag
+            </summary>
+        </member>
+        <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IScanFilterPlus">
+            <summary>
+            Extended properties for scan filters
+            Adds a range of upper and lower case letter flags.
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilterPlus.LowerCaseFlags">
+            <summary>
+            Gets the set of lower case filter flags
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilterPlus.UpperCaseFlags">
+            <summary>
+            Gets the set of upper case filter flags
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilterPlus.AllLowerCaseFiltersApplied">
+            <summary>
+            Gets the set of all "flag applied" flags (filter in use) for lower case flags.
+            If a specific enum bit is set, then the flag in "AllLowerCaseFilterFlags" can be used for filtering.
+            Otherwise: the filter flags are ignored.
+            </summary>
+        </member>
+        <member name="P:ThermoFisher.CommonCore.Data.Interfaces.IScanFilterPlus.AllUpperCaseFilterApplied">
+            <summary>
+            Gets the set of all "flag applied" flags (filter in use) for upper case flags.
+            If a specific enum bit is set, then the flag in "AllUpperCaseFilterFlags" can be used for filtering.
+            Otherwise: the filter flags are ignored.
+            </summary>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.Interfaces.IFilterParser">
             <summary>
@@ -27443,7 +28322,7 @@
             <param name="startScan">
             start scan number
             </param>
-            <param name="endscan">
+            <param name="endScan">
             end scan number
             </param>
             <param name="compound">
@@ -27463,7 +28342,7 @@
             </summary>
             <param name="rawData">The data.</param>
             <param name="startScan">The start scan.</param>
-            <param name="endscan">The endscan.</param>
+            <param name="endScan">The end scan.</param>
             <param name="compound">The compound.</param>
             <param name="options">The options.</param>
             <param name="averageOptions">The average options.</param>
@@ -27718,7 +28597,7 @@
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Extensions.GetCompoundScanListByTimeRange(ThermoFisher.CommonCore.Data.Interfaces.IDetectorReaderPlus,System.String,ThermoFisher.CommonCore.Data.Interfaces.IRangeAccess)">
             <summary>
-            Get the list of scans which conatin a given copound, in the range
+            Get the list of scans which contain a given compound, in the range
             "nearest scan time to range.Low" to "nearest scan time to range.High"
             </summary>
             <param name="data">Raw file</param>
@@ -27903,7 +28782,7 @@
             </returns>
         </member>
         <member name="M:ThermoFisher.CommonCore.Data.Extensions.FilteredScansListByScanRange(ThermoFisher.CommonCore.Data.Interfaces.IDetectorReaderPlus,System.Int32,System.Int32,ThermoFisher.CommonCore.Data.Business.ScanFilterHelper)">
-            <summary>Filtereds the scans list by scan range.</summary>
+            <summary>Filters the scans list by scan range.</summary>
             <param name="detectorReader">The detector reader.</param>
             <param name="startScanNum">The start scan number.</param>
             <param name="endScanNum">The end scan number.</param>
@@ -28034,11 +28913,25 @@
         <member name="M:ThermoFisher.CommonCore.Data.Extensions.RunHeader(ThermoFisher.CommonCore.Data.Interfaces.IRawData)">
             <summary>
             Returns RunHeader as an object.
-            This extension is for backwards compatibity, as an older format of IRawData return this.
+            This extension is for backwards compatibility, as an older format of IRawData return this.
             Code should use IRunHeaderAccess IRawData.RunHeader directly where possible
             </summary>
             <param name="data"></param>
             <returns></returns>
+        </member>
+        <member name="M:ThermoFisher.CommonCore.Data.Extensions.Configure(ThermoFisher.CommonCore.Data.Interfaces.FilterPrecisionMode,System.Boolean,System.Boolean,System.Boolean,ThermoFisher.CommonCore.Data.Interfaces.ExtendToleranceBy,System.Boolean)">
+            <summary>
+            Configure filter matching criteria.
+            This can reduce the number of returned results from "GetFilters" by allowing wider matching limits on target mass ranges
+            and by attempting to find a scan types where there are precursor masses both above and below that
+            mass which could be considered identical.
+            </summary>
+            <param name="mode">The mode (enum) to configure</param>
+            <param name="useSpecified">use a specified value for precision</param>
+            <param name="FromInstrument">base precision on values from the instrument</param>
+            <param name="extendDataDependent">When scans are data dependent, extended the matching of target mass limits</param>
+            <param name="extendBy">specifies how to extend target mass range limits</param>
+            <param name="findMidPoint">When a group of MS2 scans is found within tolerance, look for the mid point of the range </param>
         </member>
         <member name="T:ThermoFisher.CommonCore.Data.FilterEnums.NamespaceDoc">
             <summary>
@@ -28572,14 +29465,14 @@
             Ultra Violet Photo Dissociation
             </summary>
         </member>
-        <member name="F:ThermoFisher.CommonCore.Data.FilterEnums.ActivationType.ModeA">
+        <member name="F:ThermoFisher.CommonCore.Data.FilterEnums.ActivationType.ElectronInducedDissociation">
             <summary>
-            Mode a (reserved) .
+            Electron Induced Dissociation.
             </summary>
         </member>
-        <member name="F:ThermoFisher.CommonCore.Data.FilterEnums.ActivationType.ModeB">
+        <member name="F:ThermoFisher.CommonCore.Data.FilterEnums.ActivationType.ElectronEnergy">
             <summary>
-            Mode b (reserved) .
+            Electron Energy (an additional value for EID) .
             </summary>
         </member>
         <member name="F:ThermoFisher.CommonCore.Data.FilterEnums.ActivationType.ModeC">
