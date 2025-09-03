@@ -34,7 +34,6 @@ jobs:
       
     - name: Build
       run: |
-        dotnet build --configuration Release --no-restore
         dotnet publish -c Release -o . -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=true --self-contained true
         cp Raxport.exe release/Raxport.exe
         # cp README.md release/README.md
