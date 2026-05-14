@@ -26,22 +26,20 @@ jobs:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
     - name: Install dependencies
-      run: dotnet restore
+      run: dotnet restore src/RaxportNetCore.csproj
 
     - name: Prepare build
       run: |
-        mkdir release
+        mkdir -p release
       
     - name: Build
       run: |
-        dotnet publish -c Release -o . -r osx-arm64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
-        cp Raxport release/Raxport-osx-arm64
-        dotnet publish -c Release -o . -r osx-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
-        cp Raxport release/Raxport-osx-x64
+        dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=osx-arm64-single-file
+        cp bin/Raxport-osx-arm64 release/Raxport-osx-arm64
+        dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=osx-x64-single-file
+        cp bin/Raxport-osx-x64 release/Raxport-osx-x64
         # cp README.md release/README.md
-        # for test
-        chmod +x Raxport
-        ./Raxport -h
+        chmod +x bin/Raxport-osx-arm64 bin/Raxport-osx-x64
 
     - name: Upload build artificats
       uses: actions/upload-artifact@v4

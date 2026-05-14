@@ -2,17 +2,19 @@
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
+		<OutputType>Exe</OutputType>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<VersionPrefix>5</VersionPrefix>
 		<Authors>XYZ</Authors>
 		<Copyright>Copyright@XYZ</Copyright>
 		<IsPackable>false</IsPackable>
-		<IsTestProject>true</IsTestProject>
+		<IsTestProject Condition="'$(EnableRaxportTests)' == 'true'">true</IsTestProject>
 		<PlatformTarget>AnyCPU</PlatformTarget>
 		<StartupObject>Raxport.MainProgram</StartupObject>
 		<UseAppHost>true</UseAppHost>
 		<AssemblyName>Raxport</AssemblyName>
+		<RuntimeIdentifiers>linux-x64;win-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
 		<Configurations>Debug;Release;linux</Configurations>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
 		<PackageIcon>logo.png</PackageIcon>
@@ -27,7 +29,12 @@
 	  <Content Include="logo.ico" />
 	</ItemGroup>
 
-	<ItemGroup>
+	<ItemGroup Condition="'$(EnableRaxportTests)' != 'true'">
+		<Compile Remove="GlobalUsings.cs" />
+		<Compile Remove="TestRaxport.cs" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(EnableRaxportTests)' == 'true'">
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.5.0" />
 		<PackageReference Include="MSTest.TestAdapter" Version="2.2.10" />
 		<PackageReference Include="MSTest.TestFramework" Version="2.2.10" />
@@ -36,17 +43,28 @@
 
 	<ItemGroup>
 		<Reference Include="ThermoFisher.CommonCore.BackgroundSubtraction">
-		  <HintPath>dll\ThermoFisher.CommonCore.BackgroundSubtraction.dll</HintPath>
+		  <HintPath>..\dll\ThermoFisher.CommonCore.BackgroundSubtraction.dll</HintPath>
 		</Reference>
 		<Reference Include="ThermoFisher.CommonCore.Data">
-			<HintPath>dll\ThermoFisher.CommonCore.Data.dll</HintPath>
+			<HintPath>..\dll\ThermoFisher.CommonCore.Data.dll</HintPath>
 		</Reference>
 		<Reference Include="ThermoFisher.CommonCore.MassPrecisionEstimator">
-		  <HintPath>dll\ThermoFisher.CommonCore.MassPrecisionEstimator.dll</HintPath>
+		  <HintPath>..\dll\ThermoFisher.CommonCore.MassPrecisionEstimator.dll</HintPath>
 		</Reference>
 		<Reference Include="ThermoFisher.CommonCore.RawFileReader">
-			<HintPath>dll\ThermoFisher.CommonCore.RawFileReader.dll</HintPath>
+			<HintPath>..\dll\ThermoFisher.CommonCore.RawFileReader.dll</HintPath>
 		</Reference>
 	</ItemGroup>
+
+	<Target Name="SkipThermoFisherAssembliesDuringTrim"
+			AfterTargets="_ComputeAssembliesToPostprocessOnPublish"
+			BeforeTargets="_ComputeManagedAssemblyToLink">
+		<ItemGroup>
+			<_ThermoFisherAssembliesToCopy Include="@(ResolvedFileToPublish)"
+				Condition="$([System.String]::Copy('%(Filename)').StartsWith('ThermoFisher.CommonCore.'))" />
+			<ResolvedFileToPublish Remove="@(_ThermoFisherAssembliesToCopy)" />
+			<ResolvedFileToPublish Include="@(_ThermoFisherAssembliesToCopy)" PostprocessAssembly="false" />
+		</ItemGroup>
+	</Target>
 
 </Project>

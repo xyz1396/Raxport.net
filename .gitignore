@@ -193,6 +193,12 @@ publish/
 # TODO: Comment the next line if you want to checkin your web deploy settings 
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
+!src/Properties/
+!src/Properties/PublishProfiles/
+!src/Properties/PublishProfiles/linux-x64-single-file.pubxml
+!src/Properties/PublishProfiles/win-x64-single-file.pubxml
+!src/Properties/PublishProfiles/osx-x64-single-file.pubxml
+!src/Properties/PublishProfiles/osx-arm64-single-file.pubxml
 *.publishproj
 
 # NuGet Packages

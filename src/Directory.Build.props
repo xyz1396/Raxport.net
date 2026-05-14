@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../bin/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../obj/</BaseIntermediateOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildThisFileDirectory)bin/**;$(MSBuildThisFileDirectory)obj/**;$(MSBuildThisFileDirectory)../bin/**;$(MSBuildThisFileDirectory)../obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

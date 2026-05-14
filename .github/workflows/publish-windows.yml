@@ -26,7 +26,7 @@ jobs:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
     - name: Install dependencies
-      run: dotnet restore
+      run: dotnet restore src/RaxportNetCore.csproj
 
     - name: Prepare build
       run: |
@@ -34,8 +34,8 @@ jobs:
       
     - name: Build
       run: |
-        dotnet publish -c Release -o . -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=true --self-contained true
-        cp Raxport.exe release/Raxport.exe
+        dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=win-x64-single-file
+        cp bin/Raxport-win-x64.exe release/Raxport-win-x64.exe
         # cp README.md release/README.md
     
     - name: Upload build artificats
