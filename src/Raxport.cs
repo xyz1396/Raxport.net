@@ -1,4 +1,4 @@
-﻿using ThermoFisher.CommonCore.Data;
+using ThermoFisher.CommonCore.Data;
 using ThermoFisher.CommonCore.Data.Business;
 using ThermoFisher.CommonCore.Data.Interfaces;
 using ThermoFisher.CommonCore.RawFileReader;
