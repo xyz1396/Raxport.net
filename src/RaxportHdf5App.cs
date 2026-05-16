@@ -10,6 +10,13 @@ using ThermoFisher.CommonCore.RawFileReader;
 
 namespace Raxport
 {
+    internal static class Hdf5BufferDefaults
+    {
+        public const long PeaksPerFlushUnit = 10_000_000;
+        public const int DefaultPeakFlushUnits = 2;
+        public const long DefaultMaxBufferedPeaks = DefaultPeakFlushUnits * PeaksPerFlushUnit;
+    }
+
     public class FTwriter
     {
         private static readonly string raxportVersion = "6.0";
@@ -24,7 +31,7 @@ namespace Raxport
         public double intensityTreshold = 0.99;
         private readonly int[] chargesInConsideration = { 2, 3, 4 };
         public double mzTolerancePpm = 10.0;
-        public int flushInterval = 60000;
+        public long maxBufferedPeaks = Hdf5BufferDefaults.DefaultMaxBufferedPeaks;
 
         public IEnumerable<int>? MS1scanNumbers;
         public List<int[]>? scanNumberRanges;
@@ -368,7 +375,7 @@ namespace Raxport
                 rawFileName!,
                 rawFile!.GetInstrumentData().Model,
                 raxportVersion,
-                flushInterval);
+                maxBufferedPeaks);
             hdf5Writer = writer;
 
             LogConversionStart(outputFile);
@@ -537,7 +544,7 @@ namespace Raxport
             Console.WriteLine($"Input raw file      : {rawFileName}");
             Console.WriteLine($"Output HDF5 file    : {outputFile}");
             Console.WriteLine($"Scan range          : {firstScanNumber} - {lastScanNumber} ({lastScanNumber - firstScanNumber + 1:N0} scans)");
-            Console.WriteLine($"Flush interval      : {flushInterval:N0} scans");
+            Console.WriteLine($"Peak flush limit    : {maxBufferedPeaks:N0} peaks");
             Console.WriteLine($"Merge adjacent MS1  : {ifMergeScans}");
             Console.WriteLine($"Top precursor count : {topNprecursor:N0}");
             Console.WriteLine($"m/z tolerance       : {mzTolerancePpm:0.###} ppm");
@@ -594,7 +601,8 @@ namespace Raxport
         private static string inPath = "";
         private static string outPath = "";
         private static int threads = 6;
-        private static int flushInterval = 60000;
+        private static int peakFlushUnits = Hdf5BufferDefaults.DefaultPeakFlushUnits;
+        private static long maxBufferedPeaks = Hdf5BufferDefaults.DefaultMaxBufferedPeaks;
         private static bool ifMergeScans = false;
         private static int topN = 15;
         private static double mzTolerancePpm = 10.0;
@@ -609,17 +617,24 @@ namespace Raxport
             bool rValue = false;
             inPath = Directory.GetCurrentDirectory();
             outPath = inPath;
-            string help = "On windows: ./Raxport.exe -i 'input path' -o 'output path -j 'threads number'\n" +
-                "Or ./Raxport.exe -f 'one raw file name' -o 'output path'\n" + "\n" +
-                "On linux: ./Raxport -i 'input path' -o 'output path' -j 'threads number'\n" +
-                "Or ./Raxport -f 'one raw file name' -o 'output path'\n" +
+            string help = "Usage:\n" +
+                "  Windows: .\\Raxport-win-x64.exe -i 'input path' -o 'output path' -j 6 -p 2\n" +
+                "           .\\Raxport-win-x64.exe -f 'one raw file name' -o 'output path' -p 2\n" +
+                "  Linux:   ./Raxport-linux-x64 -i 'input path' -o 'output path' -j 6 -p 2\n" +
+                "           ./Raxport-linux-x64 -f 'one raw file name' -o 'output path' -p 2\n" +
+                "  macOS:   ./Raxport-osx-x64 -i 'input path' -o 'output path' -j 6 -p 2\n" +
+                "           ./Raxport-osx-arm64 -i 'input path' -o 'output path' -j 6 -p 2\n" +
                 "\n" +
-                "For multiple raw files, '-j N' launches up to N child Raxport processes \n" +
-                "add '-s 60000' to flush HDF5 scan buffers every 60000 scans \n" +
-                "add '-m' if you want to merge 2 adjacent MS1 scans \n" +
-                "add '-n 5' if you want to limit precursor numbers of each MSn scan to 5 \n" +
-                "add '-p 10' to set precursor m/z tolerance in ppm \n" +
-                "Default path is ./ \n";
+                "Options:\n" +
+                "  -i PATH                 Input directory containing .raw files. Default: current directory.\n" +
+                "  -f FILE                 Convert one RAW file instead of scanning the input directory.\n" +
+                "  -o PATH                 Output directory. Default: input/current directory.\n" +
+                "  -j N                    Maximum child Raxport processes for multiple files. Default: 6.\n" +
+                "  -p N                    Peak flush units; one unit is 10,000,000 peak rows. Default: 2.\n" +
+                "  -n N                    Maximum precursor candidates stored for each MSn scan. Default: 15.\n" +
+                "  --mz-tolerance-ppm PPM  Precursor m/z matching tolerance. Default: 10.\n" +
+                "  -m                      Merge adjacent MS1 scans.\n" +
+                "  -h                      Show this help.\n";
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "-h")
@@ -647,11 +662,12 @@ namespace Raxport
                 {
                     _ = int.TryParse(args[++i], out threads);
                 }
-                else if (args[i] == "-s")
+                else if (args[i] == "-p")
                 {
-                    if (int.TryParse(args[++i], out int parsedFlushInterval) && parsedFlushInterval > 0)
+                    if (int.TryParse(args[++i], out int parsedPeakFlushUnits) && parsedPeakFlushUnits > 0)
                     {
-                        flushInterval = parsedFlushInterval;
+                        peakFlushUnits = parsedPeakFlushUnits;
+                        maxBufferedPeaks = peakFlushUnits * Hdf5BufferDefaults.PeaksPerFlushUnit;
                     }
                 }
                 else if (args[i] == "-m")
@@ -662,7 +678,7 @@ namespace Raxport
                 {
                     _ = int.TryParse(args[++i], out topN);
                 }
-                else if (args[i] == "-p" || args[i] == "--mz-tolerance-ppm")
+                else if (args[i] == "--mz-tolerance-ppm")
                 {
                     if (double.TryParse(args[++i], out double parsedMzTolerancePpm) && parsedMzTolerancePpm >= 0)
                     {
@@ -732,7 +748,7 @@ namespace Raxport
             FTwriter writer = new(file, outPath, true);
             writer.ifMergeScans = ifMergeScans;
             writer.topNprecursor = topN;
-            writer.flushInterval = flushInterval;
+            writer.maxBufferedPeaks = maxBufferedPeaks;
             writer.mzTolerancePpm = mzTolerancePpm;
             writer.Write();
         }
@@ -772,11 +788,11 @@ namespace Raxport
             startInfo.ArgumentList.Add(outPath);
             startInfo.ArgumentList.Add("-j");
             startInfo.ArgumentList.Add("1");
-            startInfo.ArgumentList.Add("-s");
-            startInfo.ArgumentList.Add(flushInterval.ToString(CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add("-p");
+            startInfo.ArgumentList.Add(peakFlushUnits.ToString(CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add("-n");
             startInfo.ArgumentList.Add(topN.ToString(CultureInfo.InvariantCulture));
-            startInfo.ArgumentList.Add("-p");
+            startInfo.ArgumentList.Add("--mz-tolerance-ppm");
             startInfo.ArgumentList.Add(mzTolerancePpm.ToString("R", CultureInfo.InvariantCulture));
             if (ifMergeScans)
             {

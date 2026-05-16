@@ -44,7 +44,7 @@ internal sealed record Hdf5ScanRecord(
 internal sealed partial class Hdf5BufferedWriter : IDisposable
 {
     private const int ErrorBufferLength = 4096;
-    private readonly int flushInterval;
+    private readonly long maxBufferedPeaks;
     private readonly List<BufferedScan> scans = new();
     private readonly List<Hdf5PeakRecord> peaks = new();
     private readonly List<BufferedReaction> reactions = new();
@@ -68,15 +68,15 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         string sourceRawFile,
         string instrumentModel,
         string raxportVersion,
-        int flushInterval)
+        long maxBufferedPeaks)
     {
-        if (flushInterval <= 0)
+        if (maxBufferedPeaks <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(flushInterval), "Flush interval must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(maxBufferedPeaks), "Peak flush limit must be positive.");
         }
 
         this.path = path;
-        this.flushInterval = flushInterval;
+        this.maxBufferedPeaks = maxBufferedPeaks;
 
         byte[] error = new byte[ErrorBufferLength];
         Stopwatch writeTimer = Stopwatch.StartNew();
@@ -104,6 +104,11 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
     public void AddScan(Hdf5ScanRecord scan)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+
+        if (scans.Count > 0 && peaks.Count + (long)scan.Peaks.Count > maxBufferedPeaks)
+        {
+            Flush();
+        }
 
         long peakStart = totalPeaks + peaks.Count;
         peaks.AddRange(scan.Peaks);
@@ -138,7 +143,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
             peakStart,
             scan.Peaks.Count));
 
-        if (scans.Count >= flushInterval)
+        if (peaks.Count >= maxBufferedPeaks)
         {
             Flush();
         }

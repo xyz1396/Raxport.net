@@ -7,14 +7,16 @@ namespace Raxport;
 public sealed class Hdf5BufferedWriterTests
 {
     [TestMethod]
-    public void FlushesAcrossConfiguredBoundary()
+    public void FlushesAcrossConfiguredPeakBoundary()
     {
         string path = Path.Combine(Path.GetTempPath(), $"raxport-boundary-{Guid.NewGuid():N}.h5");
         try
         {
-            using Hdf5BufferedWriter writer = new(path, "boundary.raw", "test instrument", "test", 2);
+            using Hdf5BufferedWriter writer = new(path, "boundary.raw", "test instrument", "test", 3);
             writer.AddScan(CreateScan(1, 1, null));
+            Assert.AreEqual(0, writer.FlushCount);
             writer.AddScan(CreateScan(2, 1, null));
+            Assert.AreEqual(1, writer.FlushCount);
             writer.AddScan(CreateScan(3, 2, CreateReaction()));
         }
         finally

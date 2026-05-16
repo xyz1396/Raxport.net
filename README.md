@@ -12,16 +12,16 @@ The release artifacts are self-contained, single-file binaries. Use the file for
 
 ```bash
 # Linux x64
-./Raxport-linux-x64 -i 'input path' -o 'output path' -j 'threads number'
+./Raxport-linux-x64 -i 'input path' -o 'output path' -j 6 -p 2
 
 # macOS x64
-./Raxport-osx-x64 -i 'input path' -o 'output path' -j 'threads number'
+./Raxport-osx-x64 -i 'input path' -o 'output path' -j 6 -p 2
 
 # macOS Apple Silicon
-./Raxport-osx-arm64 -i 'input path' -o 'output path' -j 'threads number'
+./Raxport-osx-arm64 -i 'input path' -o 'output path' -j 6 -p 2
 
 # Windows x64
-.\Raxport-win-x64.exe -i 'input path' -o 'output path' -j 'threads number'
+.\Raxport-win-x64.exe -i 'input path' -o 'output path' -j 6 -p 2
 ```
 
 The HDF5 native bridge is bundled into the executable and self-extracted by .NET at runtime.
@@ -48,13 +48,42 @@ Output files:
 
 Each output is intended to be distributed as a single file.
 
-### Control the HDF5 flush interval
+### Command options
+
+Examples:
 
 ```bash
-./Raxport-linux-x64 -i 'input path' -o 'output path' -s 60000 -j 'threads number'
+# Linux x64: convert all RAW files in a directory, using up to 6 child processes.
+./Raxport-linux-x64 -i 'input path' -o 'output path' -j 6 -p 2
+
+# macOS x64.
+./Raxport-osx-x64 -i 'input path' -o 'output path' -j 6 -p 2
+
+# macOS Apple Silicon.
+./Raxport-osx-arm64 -i 'input path' -o 'output path' -j 6 -p 2
+
+# Windows x64.
+.\Raxport-win-x64.exe -i 'input path' -o 'output path' -j 6 -p 2
+
+# Convert one RAW file.
+./Raxport-linux-x64 -f 'file.raw' -o 'output path' -p 2
 ```
 
-The `-s` option sets how many scan rows are buffered before Raxport flushes data to HDF5. Each input RAW file produces one `<raw-file-name>.h5` file.
+Options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `-i PATH` | current directory | Input directory containing `.raw` files. |
+| `-f FILE` | unset | Convert one RAW file instead of scanning the input directory. |
+| `-o PATH` | input/current directory | Output directory for generated `.h5` files. |
+| `-j N` | `6` | Maximum child Raxport processes when converting multiple RAW files. |
+| `-p N` | `2` | HDF5 peak flush units. One unit is 10,000,000 peak rows, so `-p 2` flushes at about 20,000,000 buffered peak rows. |
+| `-n N` | `15` | Maximum precursor candidates stored for each MSn scan. |
+| `--mz-tolerance-ppm PPM` | `10` | Precursor m/z matching tolerance in ppm. |
+| `-m` | off | Merge adjacent MS1 scans. |
+| `-h` | off | Print command help and exit. |
+
+Each input RAW file produces one `<raw-file-name>.h5` output file.
 
 ### Generated HDF5 file structure
 
