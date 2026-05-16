@@ -2,54 +2,66 @@ name: publish-linux
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main, master ]
   pull_request:
-    branches: [ master ]
+    branches: [ main, master ]
   release:
     types: [ created ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
-  DOTNET_VERSION: '8.0.x' # The .NET SDK version to use
+  DOTNET_VERSION: '8.0.x'
 
 jobs:
   publish:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: dotnet restore src/RaxportNetCore.csproj
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Prepare build
-      run: |
-        mkdir -p release
-      
-    - name: Build
-      run: |
-        dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=linux-x64-single-file
-        cp bin/Raxport-linux-x64 release/Raxport-linux-x64
-        # cp README.md release/README.md
-    
-    - name: Upload build artificats
-      uses: actions/upload-artifact@v4
-      with:
-        name: Raxport-linux
-        path: release/*
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config autoconf automake libtool ninja-build
 
-    - name: Upload binaries to the release
-      uses: svenstaro/upload-release-action@v2
-      # if: ${{ github.event_name == 'release' }}
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        tag: ${{ github.ref }}
-        file: release/*
-        overwrite: true
-        file_glob: true
+      - name: Bootstrap vcpkg
+        shell: bash
+        run: |
+          rm -rf vcpkg
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
+          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Install HDF5
+        shell: bash
+        run: ./vcpkg/vcpkg install hdf5:x64-linux
+
+      - name: Publish
+        shell: bash
+        run: |
+          rm -rf bin release
+          dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=linux-x64-single-file -p:UseSharedCompilation=false
+          mkdir -p release
+          cp bin/Raxport-linux-x64 release/Raxport-linux-x64
+          chmod +x release/Raxport-linux-x64
+          test ! -e bin/libraxport_hdf5.so
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raxport-linux-x64
+          path: release/Raxport-linux-x64
+          if-no-files-found: error
+
+      - name: Upload binaries to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*

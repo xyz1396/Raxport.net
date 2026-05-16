@@ -5,7 +5,7 @@
 		<OutputType>Exe</OutputType>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<VersionPrefix>5</VersionPrefix>
+		<VersionPrefix>6.0</VersionPrefix>
 		<Authors>XYZ</Authors>
 		<Copyright>Copyright@XYZ</Copyright>
 		<IsPackable>false</IsPackable>
@@ -18,6 +18,26 @@
 		<Configurations>Debug;Release;linux</Configurations>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
 		<PackageIcon>logo.png</PackageIcon>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<ServerGarbageCollection>false</ServerGarbageCollection>
+		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+			<RaxportPublishRid>$(RuntimeIdentifier)</RaxportPublishRid>
+			<RaxportPublishRid Condition="'$(RaxportPublishRid)' == '' And '$(PublishProfile)' == 'linux-x64-single-file'">linux-x64</RaxportPublishRid>
+			<RaxportPublishRid Condition="'$(RaxportPublishRid)' == '' And '$(PublishProfile)' == 'osx-x64-single-file'">osx-x64</RaxportPublishRid>
+			<RaxportPublishRid Condition="'$(RaxportPublishRid)' == '' And '$(PublishProfile)' == 'osx-arm64-single-file'">osx-arm64</RaxportPublishRid>
+			<RaxportPublishRid Condition="'$(RaxportPublishRid)' == '' And '$(PublishProfile)' == 'win-x64-single-file'">win-x64</RaxportPublishRid>
+			<RaxportVcpkgInstalledRoot>$(MSBuildProjectDirectory)/../vcpkg/installed</RaxportVcpkgInstalledRoot>
+			<RaxportHdf5BridgeSource>$(MSBuildProjectDirectory)/native/raxport_hdf5.c</RaxportHdf5BridgeSource>
+			<RaxportHdf5BridgeOutputDirectory>$(BaseIntermediateOutputPath)native/$(RaxportPublishRid)/</RaxportHdf5BridgeOutputDirectory>
+			<RaxportHdf5BridgeTargetName Condition="'$(RaxportPublishRid)' == 'linux-x64'">libraxport_hdf5.so</RaxportHdf5BridgeTargetName>
+			<RaxportHdf5BridgeTargetName Condition="'$(RaxportPublishRid)' == 'osx-x64' Or '$(RaxportPublishRid)' == 'osx-arm64'">libraxport_hdf5.dylib</RaxportHdf5BridgeTargetName>
+			<RaxportHdf5BridgeTargetName Condition="'$(RaxportPublishRid)' == 'win-x64'">raxport_hdf5.dll</RaxportHdf5BridgeTargetName>
+			<RaxportHdf5BridgeOutput Condition="'$(RaxportHdf5BridgeTargetName)' != ''">$(RaxportHdf5BridgeOutputDirectory)$(RaxportHdf5BridgeTargetName)</RaxportHdf5BridgeOutput>
+			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'linux-x64'">x64-linux</RaxportVcpkgTriplet>
+			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'osx-x64'">x64-osx</RaxportVcpkgTriplet>
+			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'osx-arm64'">arm64-osx</RaxportVcpkgTriplet>
+			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'win-x64'">x64-windows-static</RaxportVcpkgTriplet>
+			<RaxportVcpkgRoot Condition="'$(RaxportVcpkgTriplet)' != ''">$(RaxportVcpkgInstalledRoot)/$(RaxportVcpkgTriplet)</RaxportVcpkgRoot>
 	
 </PropertyGroup>
 
@@ -29,17 +49,61 @@
 	  <Content Include="logo.ico" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="0x100000000" />
+		<RuntimeHostConfigurationOption Include="System.GC.RetainVM" Value="false" />
+	</ItemGroup>
+		<ItemGroup Condition="'$(PublishTrimmed)' == 'true'">
+			<TrimmerRootAssembly Include="System.Private.CoreLib" />
+			<TrimmerRootAssembly Include="System.Runtime" />
+			<TrimmerRootAssembly Include="System.Collections" />
+			<TrimmerRootAssembly Include="System.Collections.Concurrent" />
+			<TrimmerRootAssembly Include="System.ComponentModel.Primitives" />
+			<TrimmerRootAssembly Include="System.Data.Common" />
+			<TrimmerRootAssembly Include="System.IO.FileSystem.AccessControl" />
+			<TrimmerRootAssembly Include="System.IO.MemoryMappedFiles" />
+			<TrimmerRootAssembly Include="System.Linq" />
+			<TrimmerRootAssembly Include="System.ObjectModel" />
+			<TrimmerRootAssembly Include="System.Reflection" />
+			<TrimmerRootAssembly Include="System.Resources.ResourceManager" />
+			<TrimmerRootAssembly Include="System.Runtime.InteropServices" />
+			<TrimmerRootAssembly Include="System.Runtime.Serialization.Primitives" />
+			<TrimmerRootAssembly Include="System.Security.AccessControl" />
+			<TrimmerRootAssembly Include="System.Security.Principal" />
+			<TrimmerRootAssembly Include="System.Security.Principal.Windows" />
+			<TrimmerRootAssembly Include="System.Text.Encoding.Extensions" />
+			<TrimmerRootAssembly Include="System.Threading" />
+			<TrimmerRootAssembly Include="System.Threading.Tasks" />
+			<TrimmerRootAssembly Include="System.Threading.Tasks.Parallel" />
+			<TrimmerRootAssembly Include="System.Threading.Thread" />
+			<TrimmerRootAssembly Include="System.Threading.ThreadPool" />
+			<TrimmerRootAssembly Include="System.Xml.ReaderWriter" />
+			<TrimmerRootAssembly Include="System.Xml.Serialization" />
+		</ItemGroup>
+
+	<ItemGroup Condition="'$(RaxportHdf5BridgeOutput)' != ''">
+		<Content Include="$(RaxportHdf5BridgeOutput)"
+				 TargetPath="$(RaxportHdf5BridgeTargetName)"
+				 CopyToOutputDirectory="PreserveNewest"
+				 CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+
 	<ItemGroup Condition="'$(EnableRaxportTests)' != 'true'">
 		<Compile Remove="GlobalUsings.cs" />
 		<Compile Remove="TestRaxport.cs" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(EnableRaxportTests)' == 'true'">
+		<Compile Include="../test/Hdf5BufferedWriterTests.cs" Link="Hdf5BufferedWriterTests.cs" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.5.0" />
 		<PackageReference Include="MSTest.TestAdapter" Version="2.2.10" />
 		<PackageReference Include="MSTest.TestFramework" Version="2.2.10" />
 		<PackageReference Include="coverlet.collector" Version="3.2.0" />
 	</ItemGroup>
+
+	<PropertyGroup Condition="'$(EnableRaxportTests)' == 'true'">
+		<DefineConstants>$(DefineConstants);RAXPORT_TESTS</DefineConstants>
+	</PropertyGroup>
 
 	<ItemGroup>
 		<Reference Include="ThermoFisher.CommonCore.BackgroundSubtraction">
@@ -65,6 +129,54 @@
 			<ResolvedFileToPublish Remove="@(_ThermoFisherAssembliesToCopy)" />
 			<ResolvedFileToPublish Include="@(_ThermoFisherAssembliesToCopy)" PostprocessAssembly="false" />
 		</ItemGroup>
+	</Target>
+
+	<Target Name="ValidateRaxportHdf5BridgeBuildHost"
+			BeforeTargets="ResolveReferences"
+			Condition="'$(EnableRaxportTests)' != 'true' And '$(RaxportHdf5BridgeOutput)' != '' And !Exists('$(RaxportHdf5BridgeOutput)')">
+		<Error Condition="'$(RaxportPublishRid)' == 'linux-x64' And $([MSBuild]::IsOSPlatform('Linux')) != 'true'"
+			   Text="The linux-x64 HDF5 bridge must be built on Linux, or provide $(RaxportHdf5BridgeOutput) before publish." />
+		<Error Condition="('$(RaxportPublishRid)' == 'osx-x64' Or '$(RaxportPublishRid)' == 'osx-arm64') And $([MSBuild]::IsOSPlatform('OSX')) != 'true'"
+			   Text="The $(RaxportPublishRid) HDF5 bridge must be built on macOS, or provide $(RaxportHdf5BridgeOutput) before publish." />
+		<Error Condition="'$(RaxportPublishRid)' == 'win-x64' And $([MSBuild]::IsOSPlatform('Windows')) != 'true'"
+			   Text="The win-x64 HDF5 bridge must be built on Windows, or provide $(RaxportHdf5BridgeOutput) before publish." />
+	</Target>
+
+	<Target Name="BuildLinuxHdf5Bridge"
+			BeforeTargets="ResolveReferences"
+			Inputs="$(RaxportHdf5BridgeSource)"
+			Outputs="$(RaxportHdf5BridgeOutput)"
+			Condition="'$(EnableRaxportTests)' != 'true' And '$(RaxportPublishRid)' == 'linux-x64' And $([MSBuild]::IsOSPlatform('Linux')) And Exists('$(RaxportHdf5BridgeSource)')">
+		<Error Condition="!Exists('$(RaxportVcpkgRoot)/include/hdf5.h')" Text="Missing HDF5 headers for $(RaxportPublishRid): $(RaxportVcpkgRoot)/include/hdf5.h" />
+		<Error Condition="!Exists('$(RaxportVcpkgRoot)/lib/libhdf5.a')" Text="Missing static HDF5 library for $(RaxportPublishRid): $(RaxportVcpkgRoot)/lib/libhdf5.a" />
+		<MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(RaxportHdf5BridgeOutput)'))" />
+		<Exec Command="gcc -O3 -DNDEBUG -fPIC -shared &quot;$(RaxportHdf5BridgeSource)&quot; -o &quot;$(RaxportHdf5BridgeOutput)&quot; -I&quot;$(RaxportVcpkgRoot)/include&quot; &quot;$(RaxportVcpkgRoot)/lib/libhdf5.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libz.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libsz.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libaec.a&quot; -lm -ldl -pthread" />
+	</Target>
+
+	<Target Name="BuildMacHdf5Bridge"
+			BeforeTargets="ResolveReferences"
+			Inputs="$(RaxportHdf5BridgeSource)"
+			Outputs="$(RaxportHdf5BridgeOutput)"
+			Condition="'$(EnableRaxportTests)' != 'true' And ('$(RaxportPublishRid)' == 'osx-x64' Or '$(RaxportPublishRid)' == 'osx-arm64') And $([MSBuild]::IsOSPlatform('OSX')) And Exists('$(RaxportHdf5BridgeSource)')">
+		<PropertyGroup>
+			<RaxportMacArch Condition="'$(RaxportPublishRid)' == 'osx-x64'">x86_64</RaxportMacArch>
+			<RaxportMacArch Condition="'$(RaxportPublishRid)' == 'osx-arm64'">arm64</RaxportMacArch>
+		</PropertyGroup>
+		<Error Condition="!Exists('$(RaxportVcpkgRoot)/include/hdf5.h')" Text="Missing HDF5 headers for $(RaxportPublishRid): $(RaxportVcpkgRoot)/include/hdf5.h" />
+		<Error Condition="!Exists('$(RaxportVcpkgRoot)/lib/libhdf5.a')" Text="Missing static HDF5 library for $(RaxportPublishRid): $(RaxportVcpkgRoot)/lib/libhdf5.a" />
+		<MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(RaxportHdf5BridgeOutput)'))" />
+		<Exec Command="clang -O3 -DNDEBUG -dynamiclib -fPIC -arch $(RaxportMacArch) &quot;$(RaxportHdf5BridgeSource)&quot; -o &quot;$(RaxportHdf5BridgeOutput)&quot; -I&quot;$(RaxportVcpkgRoot)/include&quot; &quot;$(RaxportVcpkgRoot)/lib/libhdf5.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libz.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libsz.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libaec.a&quot; -lm -pthread" />
+	</Target>
+
+	<Target Name="BuildWindowsHdf5Bridge"
+			BeforeTargets="ResolveReferences"
+			Inputs="$(RaxportHdf5BridgeSource)"
+			Outputs="$(RaxportHdf5BridgeOutput)"
+			Condition="'$(EnableRaxportTests)' != 'true' And '$(RaxportPublishRid)' == 'win-x64' And $([MSBuild]::IsOSPlatform('Windows')) And Exists('$(RaxportHdf5BridgeSource)')">
+		<Error Condition="!Exists('$(RaxportVcpkgRoot)/include/hdf5.h')" Text="Missing HDF5 headers for $(RaxportPublishRid): $(RaxportVcpkgRoot)/include/hdf5.h" />
+		<Error Condition="!Exists('$(RaxportVcpkgRoot)/lib/hdf5.lib')" Text="Missing static HDF5 library for $(RaxportPublishRid): $(RaxportVcpkgRoot)/lib/hdf5.lib" />
+		<MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(RaxportHdf5BridgeOutput)'))" />
+		<Exec Command="cl /nologo /LD /O2 /Ob2 /DNDEBUG /D_CRT_SECURE_NO_WARNINGS /I&quot;$(RaxportVcpkgRoot)/include&quot; &quot;$(RaxportHdf5BridgeSource)&quot; /Fe:&quot;$(RaxportHdf5BridgeOutput)&quot; /link /NOLOGO &quot;$(RaxportVcpkgRoot)/lib/hdf5.lib&quot; &quot;$(RaxportVcpkgRoot)/lib/zlib.lib&quot; &quot;$(RaxportVcpkgRoot)/lib/sz.lib&quot; &quot;$(RaxportVcpkgRoot)/lib/aec.lib&quot;" />
 	</Target>
 
 </Project>

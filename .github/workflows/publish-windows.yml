@@ -2,54 +2,66 @@ name: publish-windows
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main, master ]
   pull_request:
-    branches: [ master ]
+    branches: [ main, master ]
   release:
     types: [ created ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
-  DOTNET_VERSION: '8.0.x' # The .NET SDK version to use
+  DOTNET_VERSION: '8.0.x'
 
 jobs:
   publish:
-
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: dotnet restore src/RaxportNetCore.csproj
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Prepare build
-      run: |
-        mkdir release
-      
-    - name: Build
-      run: |
-        dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=win-x64-single-file
-        cp bin/Raxport-win-x64.exe release/Raxport-win-x64.exe
-        # cp README.md release/README.md
-    
-    - name: Upload build artificats
-      uses: actions/upload-artifact@v4
-      with:
-        name: Raxport-windows
-        path: release/*
+      - name: Setup MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-    - name: Upload binaries to the release
-      uses: svenstaro/upload-release-action@v2
-      # if: ${{ github.event_name == 'release' }}
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        tag: ${{ github.ref }}
-        file: release/*
-        overwrite: true
-        file_glob: true
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          if (Test-Path vcpkg) { Remove-Item -Recurse -Force vcpkg }
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
+          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Install HDF5
+        shell: pwsh
+        run: .\vcpkg\vcpkg.exe install hdf5:x64-windows-static
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          if (Test-Path bin) { Remove-Item -Recurse -Force bin }
+          if (Test-Path release) { Remove-Item -Recurse -Force release }
+          dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=win-x64-single-file -p:UseSharedCompilation=false
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item bin/Raxport-win-x64.exe release/Raxport-win-x64.exe
+          if (Test-Path bin/raxport_hdf5.dll) { throw 'Native HDF5 bridge was published as a loose file instead of bundled.' }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raxport-win-x64
+          path: release/Raxport-win-x64.exe
+          if-no-files-found: error
+
+      - name: Upload binaries to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
