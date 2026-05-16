@@ -41,14 +41,19 @@ jobs:
 
       - name: Install HDF5
         shell: pwsh
-        run: .\vcpkg\vcpkg.exe install hdf5:x64-windows-static
+        run: |
+          .\vcpkg\vcpkg.exe install hdf5:x64-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem .\vcpkg\installed\x64-windows-static\lib | Select-Object -ExpandProperty Name
 
       - name: Publish
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           if (Test-Path bin) { Remove-Item -Recurse -Force bin }
           if (Test-Path release) { Remove-Item -Recurse -Force release }
           dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=win-x64-single-file -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force release | Out-Null
           Copy-Item bin/Raxport-win-x64.exe release/Raxport-win-x64.exe
           if (Test-Path bin/raxport_hdf5.dll) { throw 'Native HDF5 bridge was published as a loose file instead of bundled.' }

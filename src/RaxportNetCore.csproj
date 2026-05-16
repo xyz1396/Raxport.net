@@ -38,6 +38,21 @@
 			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'osx-arm64'">arm64-osx</RaxportVcpkgTriplet>
 			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'win-x64'">x64-windows-static</RaxportVcpkgTriplet>
 			<RaxportVcpkgRoot Condition="'$(RaxportVcpkgTriplet)' != ''">$(RaxportVcpkgInstalledRoot)/$(RaxportVcpkgTriplet)</RaxportVcpkgRoot>
+			<RaxportWindowsHdf5Library Condition="Exists('$(RaxportVcpkgRoot)/lib/hdf5.lib')">$(RaxportVcpkgRoot)/lib/hdf5.lib</RaxportWindowsHdf5Library>
+			<RaxportWindowsHdf5Library Condition="'$(RaxportWindowsHdf5Library)' == '' And Exists('$(RaxportVcpkgRoot)/lib/libhdf5.lib')">$(RaxportVcpkgRoot)/lib/libhdf5.lib</RaxportWindowsHdf5Library>
+			<RaxportWindowsZlibLibrary Condition="Exists('$(RaxportVcpkgRoot)/lib/zlib.lib')">$(RaxportVcpkgRoot)/lib/zlib.lib</RaxportWindowsZlibLibrary>
+			<RaxportWindowsZlibLibrary Condition="'$(RaxportWindowsZlibLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/zlibstatic.lib')">$(RaxportVcpkgRoot)/lib/zlibstatic.lib</RaxportWindowsZlibLibrary>
+			<RaxportWindowsZlibLibrary Condition="'$(RaxportWindowsZlibLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/libz.lib')">$(RaxportVcpkgRoot)/lib/libz.lib</RaxportWindowsZlibLibrary>
+			<RaxportWindowsZlibLibrary Condition="'$(RaxportWindowsZlibLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/z.lib')">$(RaxportVcpkgRoot)/lib/z.lib</RaxportWindowsZlibLibrary>
+			<RaxportWindowsZlibLibrary Condition="'$(RaxportWindowsZlibLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/zs.lib')">$(RaxportVcpkgRoot)/lib/zs.lib</RaxportWindowsZlibLibrary>
+			<RaxportWindowsSzLibrary Condition="Exists('$(RaxportVcpkgRoot)/lib/sz.lib')">$(RaxportVcpkgRoot)/lib/sz.lib</RaxportWindowsSzLibrary>
+			<RaxportWindowsSzLibrary Condition="'$(RaxportWindowsSzLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/szip.lib')">$(RaxportVcpkgRoot)/lib/szip.lib</RaxportWindowsSzLibrary>
+			<RaxportWindowsSzLibrary Condition="'$(RaxportWindowsSzLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/libsz.lib')">$(RaxportVcpkgRoot)/lib/libsz.lib</RaxportWindowsSzLibrary>
+			<RaxportWindowsSzLibrary Condition="'$(RaxportWindowsSzLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/libszip.lib')">$(RaxportVcpkgRoot)/lib/libszip.lib</RaxportWindowsSzLibrary>
+			<RaxportWindowsSzLibrary Condition="'$(RaxportWindowsSzLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/szip-static.lib')">$(RaxportVcpkgRoot)/lib/szip-static.lib</RaxportWindowsSzLibrary>
+			<RaxportWindowsAecLibrary Condition="Exists('$(RaxportVcpkgRoot)/lib/aec.lib')">$(RaxportVcpkgRoot)/lib/aec.lib</RaxportWindowsAecLibrary>
+			<RaxportWindowsAecLibrary Condition="'$(RaxportWindowsAecLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/libaec.lib')">$(RaxportVcpkgRoot)/lib/libaec.lib</RaxportWindowsAecLibrary>
+			<RaxportWindowsAecLibrary Condition="'$(RaxportWindowsAecLibrary)' == '' And Exists('$(RaxportVcpkgRoot)/lib/aec-static.lib')">$(RaxportVcpkgRoot)/lib/aec-static.lib</RaxportWindowsAecLibrary>
 	
 </PropertyGroup>
 
@@ -174,9 +189,12 @@
 			Outputs="$(RaxportHdf5BridgeOutput)"
 			Condition="'$(EnableRaxportTests)' != 'true' And '$(RaxportPublishRid)' == 'win-x64' And $([MSBuild]::IsOSPlatform('Windows')) And Exists('$(RaxportHdf5BridgeSource)')">
 		<Error Condition="!Exists('$(RaxportVcpkgRoot)/include/hdf5.h')" Text="Missing HDF5 headers for $(RaxportPublishRid): $(RaxportVcpkgRoot)/include/hdf5.h" />
-		<Error Condition="!Exists('$(RaxportVcpkgRoot)/lib/hdf5.lib')" Text="Missing static HDF5 library for $(RaxportPublishRid): $(RaxportVcpkgRoot)/lib/hdf5.lib" />
+		<Error Condition="'$(RaxportWindowsHdf5Library)' == ''" Text="Missing static HDF5 library for $(RaxportPublishRid): expected hdf5.lib or libhdf5.lib in $(RaxportVcpkgRoot)/lib" />
+		<Error Condition="'$(RaxportWindowsZlibLibrary)' == ''" Text="Missing static zlib library for $(RaxportPublishRid): expected zlib.lib, zlibstatic.lib, libz.lib, z.lib, or zs.lib in $(RaxportVcpkgRoot)/lib" />
+		<Error Condition="'$(RaxportWindowsSzLibrary)' == ''" Text="Missing static sz/szip library for $(RaxportPublishRid): expected sz.lib, szip.lib, libsz.lib, libszip.lib, or szip-static.lib in $(RaxportVcpkgRoot)/lib" />
+		<Error Condition="'$(RaxportWindowsAecLibrary)' == ''" Text="Missing static aec library for $(RaxportPublishRid): expected aec.lib, libaec.lib, or aec-static.lib in $(RaxportVcpkgRoot)/lib" />
 		<MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(RaxportHdf5BridgeOutput)'))" />
-		<Exec Command="cl /nologo /LD /O2 /Ob2 /DNDEBUG /D_CRT_SECURE_NO_WARNINGS /I&quot;$(RaxportVcpkgRoot)/include&quot; &quot;$(RaxportHdf5BridgeSource)&quot; /Fe:&quot;$(RaxportHdf5BridgeOutput)&quot; /link /NOLOGO &quot;$(RaxportVcpkgRoot)/lib/hdf5.lib&quot; &quot;$(RaxportVcpkgRoot)/lib/zlib.lib&quot; &quot;$(RaxportVcpkgRoot)/lib/sz.lib&quot; &quot;$(RaxportVcpkgRoot)/lib/aec.lib&quot;" />
+		<Exec Command="cl /nologo /LD /O2 /Ob2 /utf-8 /DNDEBUG /DH5_BUILT_AS_STATIC_LIB /D_CRT_SECURE_NO_WARNINGS /I&quot;$(RaxportVcpkgRoot)/include&quot; &quot;$(RaxportHdf5BridgeSource)&quot; /Fo:&quot;$(RaxportHdf5BridgeOutputDirectory)raxport_hdf5.obj&quot; /Fe:&quot;$(RaxportHdf5BridgeOutput)&quot; /link /NOLOGO &quot;$(RaxportWindowsHdf5Library)&quot; &quot;$(RaxportWindowsZlibLibrary)&quot; &quot;$(RaxportWindowsSzLibrary)&quot; &quot;$(RaxportWindowsAecLibrary)&quot; Shlwapi.lib" />
 	</Target>
 
 </Project>
