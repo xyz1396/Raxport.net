@@ -227,44 +227,6 @@ namespace Raxport
             }
         }
 
-        private List<Hdf5PrecursorCandidateRecord> ExpandPrecursorCandidates(IEnumerable<LabelPeak> precursorPeaks, int maxCandidates)
-        {
-            List<Hdf5PrecursorCandidateRecord> candidates = new();
-            if (maxCandidates <= 0)
-            {
-                return candidates;
-            }
-
-            foreach (LabelPeak peak in precursorPeaks)
-            {
-                int charge = (int)peak.Charge;
-                if (charge > 0)
-                {
-                    candidates.Add(new Hdf5PrecursorCandidateRecord(charge, peak.Mass));
-                    if (candidates.Count >= maxCandidates)
-                    {
-                        break;
-                    }
-                }
-                else
-                {
-                    foreach (int guessedCharge in chargesInConsideration)
-                    {
-                        candidates.Add(new Hdf5PrecursorCandidateRecord(guessedCharge, peak.Mass));
-                        if (candidates.Count >= maxCandidates)
-                        {
-                            break;
-                        }
-                    }
-                    if (candidates.Count >= maxCandidates)
-                    {
-                        break;
-                    }
-                }
-            }
-            return candidates;
-        }
-
         private double MzToleranceDa(double mz)
         {
             return Math.Abs(mz) * mzTolerancePpm / 1_000_000.0;
@@ -293,8 +255,19 @@ namespace Raxport
             Scan mPrecursorScan, IScanFilter mFilter, double mRT)
         {
             int chargeStateInt = GetTrailerChargeState(mScanNumber);
-            List<LabelPeak> precursorPeaks = FindPrecursorPeaks(mPrecursorScan, mReaction.PrecursorMass, mReaction.IsolationWidth, topNprecursor,
-                intensityTreshold);
+            List<Hdf5PeakRecord> parentPeaks = CollectPeaks(mPrecursorScan);
+            List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+                parentPeaks,
+                mReaction.PrecursorMass,
+                mReaction.IsolationWidth,
+                mzTolerancePpm);
+            List<Hdf5PeakRecord> precursorPeaks = PrecursorSelector.FindPrecursorPeaks(
+                parentPeaks,
+                mReaction.PrecursorMass,
+                mReaction.IsolationWidth,
+                topNprecursor,
+                intensityTreshold,
+                mzTolerancePpm);
 
             Hdf5ReactionRecord reaction = new(
                 mReaction.PrecursorMass,
@@ -308,7 +281,14 @@ namespace Raxport
                 mReaction.FirstPrecursorMass,
                 mReaction.LastPrecursorMass,
                 mReaction.IsolationWidthOffset,
-                ExpandPrecursorCandidates(precursorPeaks, topNprecursor));
+                PrecursorSelector.ExpandPrecursorCandidates(
+                    precursorPeaks,
+                    evidencePeaks,
+                    mReaction.PrecursorMass,
+                    mReaction.IsolationWidth,
+                    topNprecursor,
+                    mzTolerancePpm,
+                    chargeStateInt));
 
             hdf5Writer!.AddScan(new Hdf5ScanRecord(
                 mScanNumber,
@@ -619,15 +599,15 @@ namespace Raxport
             outPath = inPath;
             string help = "Usage:\n" +
                 "  Windows: .\\Raxport-win-x64.exe -i 'input path' -o 'output path' -j 6 -p 2\n" +
-                "           .\\Raxport-win-x64.exe -f 'one raw file name' -o 'output path' -p 2\n" +
+                "           .\\Raxport-win-x64.exe -f 'one raw/.d/.d.zip file name' -o 'output path' -p 2\n" +
                 "  Linux:   ./Raxport-linux-x64 -i 'input path' -o 'output path' -j 6 -p 2\n" +
-                "           ./Raxport-linux-x64 -f 'one raw file name' -o 'output path' -p 2\n" +
+                "           ./Raxport-linux-x64 -f 'one raw/.d/.d.zip file name' -o 'output path' -p 2\n" +
                 "  macOS:   ./Raxport-osx-x64 -i 'input path' -o 'output path' -j 6 -p 2\n" +
                 "           ./Raxport-osx-arm64 -i 'input path' -o 'output path' -j 6 -p 2\n" +
                 "\n" +
                 "Options:\n" +
-                "  -i PATH                 Input directory containing .raw files. Default: current directory.\n" +
-                "  -f FILE                 Convert one RAW file instead of scanning the input directory.\n" +
+                "  -i PATH                 Input directory containing .raw, .d, or .d.zip files. Default: current directory.\n" +
+                "  -f FILE                 Convert one RAW, .d directory, or .d.zip archive instead of scanning the input directory.\n" +
                 "  -o PATH                 Output directory. Default: input/current directory.\n" +
                 "  -j N                    Maximum child Raxport processes for multiple files. Default: 6.\n" +
                 "  -p N                    Peak flush units; one unit is 10,000,000 peak rows. Default: 2.\n" +
@@ -695,7 +675,10 @@ namespace Raxport
                 }
                 else
                 {
-                    rawFiles = Directory.GetFiles(inPath, "*.raw");
+                    rawFiles = Directory.GetFiles(inPath, "*.raw")
+                        .Concat(Directory.GetFiles(inPath, "*.d.zip"))
+                        .Concat(Directory.GetDirectories(inPath, "*.d"))
+                        .ToArray();
                 }
 
                 if (rawFiles.Length > 0)
@@ -711,7 +694,7 @@ namespace Raxport
                 }
                 else
                 {
-                    Console.WriteLine("Args parsing failed! no raw file was found!");
+                    Console.WriteLine("Args parsing failed! no .raw, .d, or .d.zip input was found!");
                     Console.WriteLine(help);
                 }
             }
@@ -745,12 +728,29 @@ namespace Raxport
 
         private static void ConvertRawFileInCurrentProcess(string file)
         {
+            if (IsBrukerInput(file))
+            {
+                BrukerHdf5Converter brukerWriter = new(file, outPath, topN, mzTolerancePpm, maxBufferedPeaks);
+                brukerWriter.Write();
+                return;
+            }
+
             FTwriter writer = new(file, outPath, true);
             writer.ifMergeScans = ifMergeScans;
             writer.topNprecursor = topN;
             writer.maxBufferedPeaks = maxBufferedPeaks;
             writer.mzTolerancePpm = mzTolerancePpm;
             writer.Write();
+        }
+
+        private static bool IsBrukerInput(string file)
+        {
+            if (Directory.Exists(file))
+            {
+                return file.EndsWith(".d", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return file.EndsWith(".d.zip", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void ConvertRawFilesInChildProcesses()

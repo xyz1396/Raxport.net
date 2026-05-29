@@ -38,6 +38,17 @@
 			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'osx-arm64'">arm64-osx</RaxportVcpkgTriplet>
 			<RaxportVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'win-x64'">x64-windows-static</RaxportVcpkgTriplet>
 			<RaxportVcpkgRoot Condition="'$(RaxportVcpkgTriplet)' != ''">$(RaxportVcpkgInstalledRoot)/$(RaxportVcpkgTriplet)</RaxportVcpkgRoot>
+			<RaxportSqliteVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'linux-x64'">x64-linux-dynamic</RaxportSqliteVcpkgTriplet>
+			<RaxportSqliteVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'osx-x64'">x64-osx-dynamic</RaxportSqliteVcpkgTriplet>
+			<RaxportSqliteVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'osx-arm64'">arm64-osx-dynamic</RaxportSqliteVcpkgTriplet>
+			<RaxportSqliteVcpkgTriplet Condition="'$(RaxportPublishRid)' == 'win-x64'">x64-windows</RaxportSqliteVcpkgTriplet>
+			<RaxportSqliteVcpkgRoot Condition="'$(RaxportSqliteVcpkgTriplet)' != ''">$(RaxportVcpkgInstalledRoot)/$(RaxportSqliteVcpkgTriplet)</RaxportSqliteVcpkgRoot>
+			<RaxportSqliteLibraryName Condition="'$(RaxportPublishRid)' == 'linux-x64'">libsqlite3.so</RaxportSqliteLibraryName>
+			<RaxportSqliteLibraryName Condition="'$(RaxportPublishRid)' == 'osx-x64' Or '$(RaxportPublishRid)' == 'osx-arm64'">libsqlite3.dylib</RaxportSqliteLibraryName>
+			<RaxportSqliteLibraryName Condition="'$(RaxportPublishRid)' == 'win-x64'">sqlite3.dll</RaxportSqliteLibraryName>
+			<RaxportSqliteLibraryPath Condition="'$(RaxportPublishRid)' == 'linux-x64'">$(RaxportSqliteVcpkgRoot)/lib/$(RaxportSqliteLibraryName)</RaxportSqliteLibraryPath>
+			<RaxportSqliteLibraryPath Condition="'$(RaxportPublishRid)' == 'osx-x64' Or '$(RaxportPublishRid)' == 'osx-arm64'">$(RaxportSqliteVcpkgRoot)/lib/$(RaxportSqliteLibraryName)</RaxportSqliteLibraryPath>
+			<RaxportSqliteLibraryPath Condition="'$(RaxportPublishRid)' == 'win-x64'">$(RaxportSqliteVcpkgRoot)/bin/$(RaxportSqliteLibraryName)</RaxportSqliteLibraryPath>
 			<RaxportWindowsHdf5Library Condition="Exists('$(RaxportVcpkgRoot)/lib/hdf5.lib')">$(RaxportVcpkgRoot)/lib/hdf5.lib</RaxportWindowsHdf5Library>
 			<RaxportWindowsHdf5Library Condition="'$(RaxportWindowsHdf5Library)' == '' And Exists('$(RaxportVcpkgRoot)/lib/libhdf5.lib')">$(RaxportVcpkgRoot)/lib/libhdf5.lib</RaxportWindowsHdf5Library>
 			<RaxportWindowsZlibLibrary Condition="Exists('$(RaxportVcpkgRoot)/lib/zlib.lib')">$(RaxportVcpkgRoot)/lib/zlib.lib</RaxportWindowsZlibLibrary>
@@ -103,6 +114,27 @@
 				 CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
 
+	<ItemGroup Condition="'$(RaxportPublishRid)' == 'linux-x64' And Exists('$(MSBuildProjectDirectory)/../dll/libtimsdata.so')">
+		<Content Include="$(MSBuildProjectDirectory)/../dll/libtimsdata.so"
+				 TargetPath="libtimsdata.so"
+				 CopyToOutputDirectory="PreserveNewest"
+				 CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(RaxportPublishRid)' == 'win-x64' And Exists('$(MSBuildProjectDirectory)/../dll/timsdata.dll')">
+		<Content Include="$(MSBuildProjectDirectory)/../dll/timsdata.dll"
+				 TargetPath="timsdata.dll"
+				 CopyToOutputDirectory="PreserveNewest"
+				 CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(RaxportSqliteLibraryPath)' != '' And Exists('$(RaxportSqliteLibraryPath)')">
+		<Content Include="$(RaxportSqliteLibraryPath)"
+				 TargetPath="$(RaxportSqliteLibraryName)"
+				 CopyToOutputDirectory="PreserveNewest"
+				 CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+
 	<ItemGroup Condition="'$(EnableRaxportTests)' != 'true'">
 		<Compile Remove="GlobalUsings.cs" />
 		<Compile Remove="TestRaxport.cs" />
@@ -155,6 +187,13 @@
 			   Text="The $(RaxportPublishRid) HDF5 bridge must be built on macOS, or provide $(RaxportHdf5BridgeOutput) before publish." />
 		<Error Condition="'$(RaxportPublishRid)' == 'win-x64' And $([MSBuild]::IsOSPlatform('Windows')) != 'true'"
 			   Text="The win-x64 HDF5 bridge must be built on Windows, or provide $(RaxportHdf5BridgeOutput) before publish." />
+	</Target>
+
+	<Target Name="ValidateRaxportSqliteRuntime"
+			BeforeTargets="ResolveReferences"
+			Condition="'$(EnableRaxportTests)' != 'true' And '$(RaxportPublishRid)' != '' And '$(RaxportSqliteLibraryPath)' != ''">
+		<Error Condition="!Exists('$(RaxportSqliteLibraryPath)')"
+			   Text="Missing vcpkg SQLite runtime for $(RaxportPublishRid): expected $(RaxportSqliteLibraryPath). Install it with: vcpkg install sqlite3:$(RaxportSqliteVcpkgTriplet)" />
 	</Target>
 
 	<Target Name="BuildLinuxHdf5Bridge"

@@ -21,6 +21,7 @@ typedef struct RaxH5Writer {
     hid_t file;
     hid_t scans;
     hid_t peaks;
+    hid_t peak_mobility_traces;
     hid_t reactions;
     hid_t candidates;
     hid_t string_tables;
@@ -43,6 +44,11 @@ typedef struct RaxH5Writer {
     hid_t peak_baseline;
     hid_t peak_noise;
     hid_t peak_charge;
+    hid_t peak_mobility_trace_start;
+    hid_t peak_mobility_trace_count;
+
+    hid_t trace_one_over_k0_index;
+    hid_t trace_intensity;
 
     hid_t reaction_precursor_mass;
     hid_t reaction_isolation_width;
@@ -55,11 +61,15 @@ typedef struct RaxH5Writer {
     hid_t reaction_first_precursor_mass;
     hid_t reaction_last_precursor_mass;
     hid_t reaction_isolation_width_offset;
+    hid_t reaction_one_over_k0_begin;
+    hid_t reaction_one_over_k0_end;
     hid_t reaction_candidate_start;
     hid_t reaction_candidate_count;
 
     hid_t candidate_charge;
     hid_t candidate_mz;
+    hid_t candidate_intensity;
+    hid_t candidate_one_over_k0;
 
     hid_t scan_filter_value;
     hid_t activation_value;
@@ -67,6 +77,7 @@ typedef struct RaxH5Writer {
 
     hsize_t scan_rows;
     hsize_t peak_rows;
+    hsize_t trace_rows;
     hsize_t reaction_rows;
     hsize_t candidate_rows;
     hsize_t scan_filter_rows;
@@ -176,6 +187,72 @@ done:
         H5Sclose(file_space);
     }
     return rc;
+}
+
+
+static int append_zero_dataset(hid_t dataset, hid_t mem_type, size_t element_size, hsize_t offset, hsize_t count)
+{
+    if (count == 0) {
+        return RAX_OK;
+    }
+
+    const hsize_t max_chunk = PEAK_CHUNK;
+    hsize_t new_size[1] = {offset + count};
+    hsize_t written = 0;
+    void *zeros = NULL;
+    int rc = RAX_FAIL;
+
+    if (H5Dset_extent(dataset, new_size) < 0) {
+        return RAX_FAIL;
+    }
+
+    zeros = calloc((size_t)max_chunk, element_size);
+    if (zeros == NULL) {
+        return RAX_FAIL;
+    }
+
+    while (written < count) {
+        hsize_t chunk = count - written;
+        hsize_t start[1] = {offset + written};
+        hsize_t extent[1];
+        hid_t file_space = -1;
+        hid_t mem_space = -1;
+        if (chunk > max_chunk) {
+            chunk = max_chunk;
+        }
+        extent[0] = chunk;
+        file_space = H5Dget_space(dataset);
+        mem_space = H5Screate_simple(1, extent, NULL);
+        if (file_space < 0 || mem_space < 0 ||
+            H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, extent, NULL) < 0 ||
+            H5Dwrite(dataset, mem_type, mem_space, file_space, H5P_DEFAULT, zeros) < 0) {
+            if (mem_space >= 0) {
+                H5Sclose(mem_space);
+            }
+            if (file_space >= 0) {
+                H5Sclose(file_space);
+            }
+            goto done;
+        }
+        H5Sclose(mem_space);
+        H5Sclose(file_space);
+        written += chunk;
+    }
+
+    rc = RAX_OK;
+
+done:
+    free(zeros);
+    return rc;
+}
+
+static int append_dataset_or_zero(hid_t dataset, hid_t mem_type, size_t element_size, hsize_t offset, hsize_t count, const void *data)
+{
+    if (data != NULL) {
+        return append_dataset(dataset, mem_type, offset, count, data);
+    }
+
+    return append_zero_dataset(dataset, mem_type, element_size, offset, count);
 }
 
 static int append_strings(hid_t dataset, hsize_t offset, hsize_t count, const char **data, size_t string_size)
@@ -294,6 +371,11 @@ static int create_all_datasets(RaxH5Writer *writer)
     writer->peak_baseline = create_dataset(writer->peaks, "baseline", H5T_NATIVE_DOUBLE, PEAK_CHUNK);
     writer->peak_noise = create_dataset(writer->peaks, "noise", H5T_NATIVE_DOUBLE, PEAK_CHUNK);
     writer->peak_charge = create_dataset(writer->peaks, "charge", H5T_NATIVE_INT, PEAK_CHUNK);
+    writer->peak_mobility_trace_start = create_dataset(writer->peaks, "mobility_trace_start", H5T_NATIVE_LLONG, PEAK_CHUNK);
+    writer->peak_mobility_trace_count = create_dataset(writer->peaks, "mobility_trace_count", H5T_NATIVE_INT, PEAK_CHUNK);
+
+    writer->trace_one_over_k0_index = create_dataset(writer->peak_mobility_traces, "one_over_k0_index", H5T_NATIVE_INT, PEAK_CHUNK);
+    writer->trace_intensity = create_dataset(writer->peak_mobility_traces, "intensity", H5T_NATIVE_FLOAT, PEAK_CHUNK);
 
     writer->reaction_precursor_mass = create_dataset(writer->reactions, "precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
     writer->reaction_isolation_width = create_dataset(writer->reactions, "isolation_width", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
@@ -306,11 +388,15 @@ static int create_all_datasets(RaxH5Writer *writer)
     writer->reaction_first_precursor_mass = create_dataset(writer->reactions, "first_precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
     writer->reaction_last_precursor_mass = create_dataset(writer->reactions, "last_precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
     writer->reaction_isolation_width_offset = create_dataset(writer->reactions, "isolation_width_offset", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
+    writer->reaction_one_over_k0_begin = create_dataset(writer->reactions, "one_over_k0_begin", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
+    writer->reaction_one_over_k0_end = create_dataset(writer->reactions, "one_over_k0_end", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
     writer->reaction_candidate_start = create_dataset(writer->reactions, "candidate_start", H5T_NATIVE_LLONG, SCAN_CHUNK);
     writer->reaction_candidate_count = create_dataset(writer->reactions, "candidate_count", H5T_NATIVE_INT, SCAN_CHUNK);
 
     writer->candidate_charge = create_dataset(writer->candidates, "charge", H5T_NATIVE_INT, SCAN_CHUNK);
     writer->candidate_mz = create_dataset(writer->candidates, "mz", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
+    writer->candidate_intensity = create_dataset(writer->candidates, "intensity", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
+    writer->candidate_one_over_k0 = create_dataset(writer->candidates, "one_over_k0", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
     writer->scan_filter_value = create_dataset(writer->string_tables, "scan_filter", scan_filter_string_type, SCAN_CHUNK);
     writer->activation_value = create_dataset(writer->string_tables, "activation", activation_string_type, SCAN_CHUNK);
     writer->reaction_activation_type_value = create_dataset(writer->string_tables, "reaction_activation_type", activation_string_type, SCAN_CHUNK);
@@ -321,13 +407,17 @@ static int create_all_datasets(RaxH5Writer *writer)
         writer->reaction_count >= 0 && writer->peak_start >= 0 && writer->peak_count >= 0 &&
         writer->peak_mz >= 0 && writer->peak_intensity >= 0 && writer->peak_resolution >= 0 &&
         writer->peak_baseline >= 0 && writer->peak_noise >= 0 && writer->peak_charge >= 0 &&
+        writer->peak_mobility_trace_start >= 0 && writer->peak_mobility_trace_count >= 0 &&
+        writer->trace_one_over_k0_index >= 0 && writer->trace_intensity >= 0 &&
         writer->reaction_precursor_mass >= 0 && writer->reaction_isolation_width >= 0 &&
         writer->reaction_charge_state >= 0 && writer->reaction_collision_energy >= 0 &&
         writer->reaction_collision_energy_valid >= 0 && writer->reaction_activation_type_id >= 0 &&
         writer->reaction_multiple_activation >= 0 && writer->reaction_precursor_range_valid >= 0 &&
         writer->reaction_first_precursor_mass >= 0 && writer->reaction_last_precursor_mass >= 0 &&
-        writer->reaction_isolation_width_offset >= 0 && writer->reaction_candidate_start >= 0 &&
+        writer->reaction_isolation_width_offset >= 0 && writer->reaction_one_over_k0_begin >= 0 &&
+        writer->reaction_one_over_k0_end >= 0 && writer->reaction_candidate_start >= 0 &&
         writer->reaction_candidate_count >= 0 && writer->candidate_charge >= 0 && writer->candidate_mz >= 0 &&
+        writer->candidate_intensity >= 0 && writer->candidate_one_over_k0 >= 0 &&
         writer->scan_filter_value >= 0 && writer->activation_value >= 0 &&
         writer->reaction_activation_type_value >= 0) {
         rc = RAX_OK;
@@ -354,7 +444,7 @@ RAXPORT_API int rax_h5_create(const char *path, const char *source_raw_file, con
     }
 
     writer->file = H5Fcreate(path, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    writer->scans = writer->peaks = writer->reactions = writer->candidates = writer->string_tables = -1;
+    writer->scans = writer->peaks = writer->peak_mobility_traces = writer->reactions = writer->candidates = writer->string_tables = -1;
     if (writer->file < 0) {
         set_error(error, error_len, "Unable to create HDF5 file.");
         free(writer);
@@ -363,17 +453,18 @@ RAXPORT_API int rax_h5_create(const char *path, const char *source_raw_file, con
 
     writer->scans = H5Gcreate2(writer->file, "/scans", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     writer->peaks = H5Gcreate2(writer->file, "/peaks", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    writer->peak_mobility_traces = H5Gcreate2(writer->file, "/peak_mobility_traces", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     writer->reactions = H5Gcreate2(writer->file, "/reactions", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     writer->candidates = H5Gcreate2(writer->file, "/precursor_candidates", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     writer->string_tables = H5Gcreate2(writer->file, "/string_tables", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    if (writer->scans < 0 || writer->peaks < 0 || writer->reactions < 0 ||
-        writer->candidates < 0 || writer->string_tables < 0) {
+    if (writer->scans < 0 || writer->peaks < 0 || writer->peak_mobility_traces < 0 ||
+        writer->reactions < 0 || writer->candidates < 0 || writer->string_tables < 0) {
         set_error(error, error_len, "Unable to create HDF5 groups.");
         rax_h5_close(writer, error, error_len);
         return RAX_FAIL;
     }
 
-    if (write_int_attr(writer->file, "schema_version", 2) != RAX_OK ||
+    if (write_int_attr(writer->file, "schema_version", 5) != RAX_OK ||
         write_string_attr(writer->file, "raxport_version", raxport_version) != RAX_OK ||
         write_string_attr(writer->file, "source_raw_file", source_raw_file) != RAX_OK ||
         write_string_attr(writer->file, "instrument_model", instrument_model) != RAX_OK) {
@@ -412,6 +503,11 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
                   const double *peak_baseline,
                   const double *peak_noise,
                   const int *peak_charge,
+                  const int64_t *peak_mobility_trace_start,
+                  const int *peak_mobility_trace_count,
+                  int mobility_trace_total,
+                  const int *mobility_trace_one_over_k0_index,
+                  const float *mobility_trace_intensity,
                   int reaction_total,
                   const double *reaction_precursor_mass,
                   const double *reaction_isolation_width,
@@ -424,11 +520,15 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
                   const double *reaction_first_precursor_mass,
                   const double *reaction_last_precursor_mass,
                   const double *reaction_isolation_width_offset,
+                  const double *reaction_one_over_k0_begin,
+                  const double *reaction_one_over_k0_end,
                   const int64_t *reaction_candidate_start,
                   const int *reaction_candidate_count,
                   int candidate_total,
                   const int *candidate_charge,
                   const double *candidate_mz,
+                  const double *candidate_intensity,
+                  const double *candidate_one_over_k0,
                   int new_scan_filter_total,
                   const char **new_scan_filters,
                   int new_activation_total,
@@ -440,6 +540,7 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
 {
     hsize_t scan_offset;
     hsize_t peak_offset;
+    hsize_t trace_offset;
     hsize_t reaction_offset;
     hsize_t candidate_offset;
     hsize_t scan_filter_offset;
@@ -450,7 +551,7 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
         set_error(error, error_len, "HDF5 writer is null.");
         return RAX_FAIL;
     }
-    if (scan_count < 0 || peak_total < 0 || reaction_total < 0 || candidate_total < 0 ||
+    if (scan_count < 0 || peak_total < 0 || mobility_trace_total < 0 || reaction_total < 0 || candidate_total < 0 ||
         new_scan_filter_total < 0 || new_activation_total < 0 || new_reaction_activation_type_total < 0) {
         set_error(error, error_len, "Negative append counts are invalid.");
         return RAX_FAIL;
@@ -458,6 +559,7 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
 
     scan_offset = writer->scan_rows;
     peak_offset = writer->peak_rows;
+    trace_offset = writer->trace_rows;
     reaction_offset = writer->reaction_rows;
     candidate_offset = writer->candidate_rows;
     scan_filter_offset = writer->scan_filter_rows;
@@ -481,11 +583,19 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
 
     if (append_dataset(writer->peak_mz, H5T_NATIVE_DOUBLE, peak_offset, (hsize_t)peak_total, peak_mz) != RAX_OK ||
         append_dataset(writer->peak_intensity, H5T_NATIVE_DOUBLE, peak_offset, (hsize_t)peak_total, peak_intensity) != RAX_OK ||
-        append_dataset(writer->peak_resolution, H5T_NATIVE_DOUBLE, peak_offset, (hsize_t)peak_total, peak_resolution) != RAX_OK ||
-        append_dataset(writer->peak_baseline, H5T_NATIVE_DOUBLE, peak_offset, (hsize_t)peak_total, peak_baseline) != RAX_OK ||
-        append_dataset(writer->peak_noise, H5T_NATIVE_DOUBLE, peak_offset, (hsize_t)peak_total, peak_noise) != RAX_OK ||
-        append_dataset(writer->peak_charge, H5T_NATIVE_INT, peak_offset, (hsize_t)peak_total, peak_charge) != RAX_OK) {
+        append_dataset_or_zero(writer->peak_resolution, H5T_NATIVE_DOUBLE, sizeof(double), peak_offset, (hsize_t)peak_total, peak_resolution) != RAX_OK ||
+        append_dataset_or_zero(writer->peak_baseline, H5T_NATIVE_DOUBLE, sizeof(double), peak_offset, (hsize_t)peak_total, peak_baseline) != RAX_OK ||
+        append_dataset_or_zero(writer->peak_noise, H5T_NATIVE_DOUBLE, sizeof(double), peak_offset, (hsize_t)peak_total, peak_noise) != RAX_OK ||
+        append_dataset_or_zero(writer->peak_charge, H5T_NATIVE_INT, sizeof(int), peak_offset, (hsize_t)peak_total, peak_charge) != RAX_OK ||
+        append_dataset(writer->peak_mobility_trace_start, H5T_NATIVE_LLONG, peak_offset, (hsize_t)peak_total, peak_mobility_trace_start) != RAX_OK ||
+        append_dataset(writer->peak_mobility_trace_count, H5T_NATIVE_INT, peak_offset, (hsize_t)peak_total, peak_mobility_trace_count) != RAX_OK) {
         set_error(error, error_len, "Unable to append peak datasets.");
+        return RAX_FAIL;
+    }
+
+    if (append_dataset(writer->trace_one_over_k0_index, H5T_NATIVE_INT, trace_offset, (hsize_t)mobility_trace_total, mobility_trace_one_over_k0_index) != RAX_OK ||
+        append_dataset(writer->trace_intensity, H5T_NATIVE_FLOAT, trace_offset, (hsize_t)mobility_trace_total, mobility_trace_intensity) != RAX_OK) {
+        set_error(error, error_len, "Unable to append peak mobility trace datasets.");
         return RAX_FAIL;
     }
 
@@ -500,6 +610,8 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
         append_dataset(writer->reaction_first_precursor_mass, H5T_NATIVE_DOUBLE, reaction_offset, (hsize_t)reaction_total, reaction_first_precursor_mass) != RAX_OK ||
         append_dataset(writer->reaction_last_precursor_mass, H5T_NATIVE_DOUBLE, reaction_offset, (hsize_t)reaction_total, reaction_last_precursor_mass) != RAX_OK ||
         append_dataset(writer->reaction_isolation_width_offset, H5T_NATIVE_DOUBLE, reaction_offset, (hsize_t)reaction_total, reaction_isolation_width_offset) != RAX_OK ||
+        append_dataset(writer->reaction_one_over_k0_begin, H5T_NATIVE_DOUBLE, reaction_offset, (hsize_t)reaction_total, reaction_one_over_k0_begin) != RAX_OK ||
+        append_dataset(writer->reaction_one_over_k0_end, H5T_NATIVE_DOUBLE, reaction_offset, (hsize_t)reaction_total, reaction_one_over_k0_end) != RAX_OK ||
         append_dataset(writer->reaction_candidate_start, H5T_NATIVE_LLONG, reaction_offset, (hsize_t)reaction_total, reaction_candidate_start) != RAX_OK ||
         append_dataset(writer->reaction_candidate_count, H5T_NATIVE_INT, reaction_offset, (hsize_t)reaction_total, reaction_candidate_count) != RAX_OK) {
         set_error(error, error_len, "Unable to append reaction datasets.");
@@ -507,7 +619,9 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
     }
 
     if (append_dataset(writer->candidate_charge, H5T_NATIVE_INT, candidate_offset, (hsize_t)candidate_total, candidate_charge) != RAX_OK ||
-        append_dataset(writer->candidate_mz, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_mz) != RAX_OK) {
+        append_dataset(writer->candidate_mz, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_mz) != RAX_OK ||
+        append_dataset(writer->candidate_intensity, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_intensity) != RAX_OK ||
+        append_dataset(writer->candidate_one_over_k0, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_one_over_k0) != RAX_OK) {
         set_error(error, error_len, "Unable to append precursor candidate datasets.");
         return RAX_FAIL;
     }
@@ -521,6 +635,7 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
 
     writer->scan_rows += (hsize_t)scan_count;
     writer->peak_rows += (hsize_t)peak_total;
+    writer->trace_rows += (hsize_t)mobility_trace_total;
     writer->reaction_rows += (hsize_t)reaction_total;
     writer->candidate_rows += (hsize_t)candidate_total;
     writer->scan_filter_rows += (hsize_t)new_scan_filter_total;
@@ -566,6 +681,10 @@ RAXPORT_API int rax_h5_close(RaxH5Writer *writer, char *error, int error_len)
     close_dataset(writer->peak_baseline);
     close_dataset(writer->peak_noise);
     close_dataset(writer->peak_charge);
+    close_dataset(writer->peak_mobility_trace_start);
+    close_dataset(writer->peak_mobility_trace_count);
+    close_dataset(writer->trace_one_over_k0_index);
+    close_dataset(writer->trace_intensity);
     close_dataset(writer->reaction_precursor_mass);
     close_dataset(writer->reaction_isolation_width);
     close_dataset(writer->reaction_charge_state);
@@ -577,10 +696,14 @@ RAXPORT_API int rax_h5_close(RaxH5Writer *writer, char *error, int error_len)
     close_dataset(writer->reaction_first_precursor_mass);
     close_dataset(writer->reaction_last_precursor_mass);
     close_dataset(writer->reaction_isolation_width_offset);
+    close_dataset(writer->reaction_one_over_k0_begin);
+    close_dataset(writer->reaction_one_over_k0_end);
     close_dataset(writer->reaction_candidate_start);
     close_dataset(writer->reaction_candidate_count);
     close_dataset(writer->candidate_charge);
     close_dataset(writer->candidate_mz);
+    close_dataset(writer->candidate_intensity);
+    close_dataset(writer->candidate_one_over_k0);
     close_dataset(writer->scan_filter_value);
     close_dataset(writer->activation_value);
     close_dataset(writer->reaction_activation_type_value);
@@ -590,6 +713,9 @@ RAXPORT_API int rax_h5_close(RaxH5Writer *writer, char *error, int error_len)
     }
     if (writer->peaks >= 0) {
         H5Gclose(writer->peaks);
+    }
+    if (writer->peak_mobility_traces >= 0) {
+        H5Gclose(writer->peak_mobility_traces);
     }
     if (writer->reactions >= 0) {
         H5Gclose(writer->reactions);

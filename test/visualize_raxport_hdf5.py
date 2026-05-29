@@ -231,6 +231,7 @@ def _validate_required_datasets(handle, path):
         "reactions/candidate_count",
         "precursor_candidates/charge",
         "precursor_candidates/mz",
+        "precursor_candidates/intensity",
     ]
     if "scans/scan_filter" not in handle:
         required.extend(["scans/scan_filter_id", "string_tables/scan_filter"])

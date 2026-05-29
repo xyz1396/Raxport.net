@@ -10,11 +10,33 @@ internal sealed record Hdf5PeakRecord(
     double Resolution,
     double Baseline,
     double Noise,
-    int Charge);
+    int Charge,
+    Hdf5PeakMobilityTrace? MobilityTrace = null,
+    double CandidateOneOverK0 = 0);
+
+internal sealed record Hdf5PeakMobilityTrace(
+    int[] OneOverK0Indices,
+    float[] Intensities)
+{
+    public int Count
+    {
+        get
+        {
+            if (OneOverK0Indices.Length != Intensities.Length)
+            {
+                throw new InvalidOperationException("Mobility trace index and intensity arrays must have matching lengths.");
+            }
+
+            return OneOverK0Indices.Length;
+        }
+    }
+}
 
 internal sealed record Hdf5PrecursorCandidateRecord(
     int Charge,
-    double Mz);
+    double Mz,
+    double Intensity = 0,
+    double OneOverK0 = 0);
 
 internal sealed record Hdf5ReactionRecord(
     double PrecursorMass,
@@ -28,7 +50,9 @@ internal sealed record Hdf5ReactionRecord(
     double FirstPrecursorMass,
     double LastPrecursorMass,
     double IsolationWidthOffset,
-    IReadOnlyList<Hdf5PrecursorCandidateRecord> Candidates);
+    IReadOnlyList<Hdf5PrecursorCandidateRecord> Candidates,
+    double OneOverK0Begin = 0,
+    double OneOverK0End = 0);
 
 internal sealed record Hdf5ScanRecord(
     int ScanNumber,
@@ -46,7 +70,16 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
     private const int ErrorBufferLength = 4096;
     private readonly long maxBufferedPeaks;
     private readonly List<BufferedScan> scans = new();
-    private readonly List<Hdf5PeakRecord> peaks = new();
+    private readonly PrimitiveBuffer<double> peakMz = new();
+    private readonly PrimitiveBuffer<double> peakIntensity = new();
+    private PrimitiveBuffer<double>? peakResolution;
+    private PrimitiveBuffer<double>? peakBaseline;
+    private PrimitiveBuffer<double>? peakNoise;
+    private PrimitiveBuffer<int>? peakCharge;
+    private readonly PrimitiveBuffer<long> peakMobilityTraceStart = new();
+    private readonly PrimitiveBuffer<int> peakMobilityTraceCount = new();
+    private readonly PrimitiveBuffer<int> traceOneOverK0Index = new();
+    private readonly PrimitiveBuffer<float> traceIntensity = new();
     private readonly List<BufferedReaction> reactions = new();
     private readonly List<Hdf5PrecursorCandidateRecord> candidates = new();
     private readonly Dictionary<string, int> scanFilterIds = new(StringComparer.Ordinal);
@@ -58,6 +91,8 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
     private readonly string path;
     private IntPtr handle;
     private long totalPeaks;
+    private long totalMobilityTracePoints;
+    private long bufferedMobilityTracePoints;
     private long totalReactions;
     private long totalCandidates;
     private long totalScans;
@@ -97,6 +132,8 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
 
     public long TotalPeaks => totalPeaks;
 
+    public long TotalMobilityTracePoints => totalMobilityTracePoints;
+
     public long TotalReactions => totalReactions;
 
     public long TotalCandidates => totalCandidates;
@@ -105,13 +142,25 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
-        if (scans.Count > 0 && peaks.Count + (long)scan.Peaks.Count > maxBufferedPeaks)
+        long incomingTraceCount = 0;
+        foreach (Hdf5PeakRecord peak in scan.Peaks)
+        {
+            incomingTraceCount += peak.MobilityTrace?.Count ?? 0;
+        }
+
+        if (scans.Count > 0 &&
+            (peakMz.Count + (long)scan.Peaks.Count > maxBufferedPeaks ||
+             bufferedMobilityTracePoints + incomingTraceCount > maxBufferedPeaks))
         {
             Flush();
         }
 
-        long peakStart = totalPeaks + peaks.Count;
-        peaks.AddRange(scan.Peaks);
+        long peakStart = totalPeaks + peakMz.Count;
+        foreach (Hdf5PeakRecord peak in scan.Peaks)
+        {
+            AppendPeak(peak);
+        }
+        bufferedMobilityTracePoints += incomingTraceCount;
 
         long reactionStart = -1;
         int reactionCount = 0;
@@ -143,9 +192,35 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
             peakStart,
             scan.Peaks.Count));
 
-        if (peaks.Count >= maxBufferedPeaks)
+        if (peakMz.Count >= maxBufferedPeaks || bufferedMobilityTracePoints >= maxBufferedPeaks)
         {
             Flush();
+        }
+    }
+
+    private void AppendPeak(Hdf5PeakRecord peak)
+    {
+        int priorPeakCount = peakMz.Count;
+        peakMz.Add(peak.Mz);
+        peakIntensity.Add(peak.Intensity);
+        AddOptionalValue(ref peakResolution, peak.Resolution, priorPeakCount);
+        AddOptionalValue(ref peakBaseline, peak.Baseline, priorPeakCount);
+        AddOptionalValue(ref peakNoise, peak.Noise, priorPeakCount);
+        AddOptionalValue(ref peakCharge, peak.Charge, priorPeakCount);
+
+        Hdf5PeakMobilityTrace? trace = peak.MobilityTrace;
+        int traceCount = trace?.Count ?? 0;
+        if (traceCount > 0 && trace is not null)
+        {
+            peakMobilityTraceStart.Add(totalMobilityTracePoints + traceOneOverK0Index.Count);
+            peakMobilityTraceCount.Add(traceCount);
+            traceOneOverK0Index.AddRange(trace.OneOverK0Indices, traceCount);
+            traceIntensity.AddRange(trace.Intensities, traceCount);
+        }
+        else
+        {
+            peakMobilityTraceStart.Add(-1);
+            peakMobilityTraceCount.Add(0);
         }
     }
 
@@ -159,7 +234,8 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
 
         Stopwatch writeTimer = Stopwatch.StartNew();
         int scanBatchCount = scans.Count;
-        int peakBatchCount = peaks.Count;
+        int peakBatchCount = peakMz.Count;
+        int traceBatchCount = traceOneOverK0Index.Count;
         int reactionBatchCount = reactions.Count;
         int candidateBatchCount = candidates.Count;
 
@@ -197,22 +273,16 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
                 peakCount[i] = scan.PeakCount;
             }
 
-            double[] peakMz = new double[peakBatchCount];
-            double[] peakIntensity = new double[peakBatchCount];
-            double[] peakResolution = new double[peakBatchCount];
-            double[] peakBaseline = new double[peakBatchCount];
-            double[] peakNoise = new double[peakBatchCount];
-            int[] peakCharge = new int[peakBatchCount];
-            for (int i = 0; i < peakBatchCount; i++)
-            {
-                Hdf5PeakRecord peak = peaks[i];
-                peakMz[i] = peak.Mz;
-                peakIntensity[i] = peak.Intensity;
-                peakResolution[i] = peak.Resolution;
-                peakBaseline[i] = peak.Baseline;
-                peakNoise[i] = peak.Noise;
-                peakCharge[i] = peak.Charge;
-            }
+            using PinnedBuffer<double> pinnedPeakMz = PinnedBuffer<double>.Pin(peakMz.Items, peakBatchCount);
+            using PinnedBuffer<double> pinnedPeakIntensity = PinnedBuffer<double>.Pin(peakIntensity.Items, peakBatchCount);
+            using PinnedBuffer<double> pinnedPeakResolution = PinnedBuffer<double>.Pin(peakResolution?.Items, peakResolution?.Count ?? 0);
+            using PinnedBuffer<double> pinnedPeakBaseline = PinnedBuffer<double>.Pin(peakBaseline?.Items, peakBaseline?.Count ?? 0);
+            using PinnedBuffer<double> pinnedPeakNoise = PinnedBuffer<double>.Pin(peakNoise?.Items, peakNoise?.Count ?? 0);
+            using PinnedBuffer<int> pinnedPeakCharge = PinnedBuffer<int>.Pin(peakCharge?.Items, peakCharge?.Count ?? 0);
+            using PinnedBuffer<long> pinnedPeakMobilityTraceStart = PinnedBuffer<long>.Pin(peakMobilityTraceStart.Items, peakBatchCount);
+            using PinnedBuffer<int> pinnedPeakMobilityTraceCount = PinnedBuffer<int>.Pin(peakMobilityTraceCount.Items, peakBatchCount);
+            using PinnedBuffer<int> pinnedTraceOneOverK0Index = PinnedBuffer<int>.Pin(traceOneOverK0Index.Items, traceBatchCount);
+            using PinnedBuffer<float> pinnedTraceIntensity = PinnedBuffer<float>.Pin(traceIntensity.Items, traceBatchCount);
 
             double[] reactionPrecursorMass = new double[reactionBatchCount];
             double[] reactionIsolationWidth = new double[reactionBatchCount];
@@ -225,6 +295,8 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
             double[] reactionFirstPrecursorMass = new double[reactionBatchCount];
             double[] reactionLastPrecursorMass = new double[reactionBatchCount];
             double[] reactionIsolationWidthOffset = new double[reactionBatchCount];
+            double[] reactionOneOverK0Begin = new double[reactionBatchCount];
+            double[] reactionOneOverK0End = new double[reactionBatchCount];
             long[] reactionCandidateStart = new long[reactionBatchCount];
             int[] reactionCandidateCount = new int[reactionBatchCount];
             for (int i = 0; i < reactionBatchCount; i++)
@@ -241,17 +313,23 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
                 reactionFirstPrecursorMass[i] = reaction.FirstPrecursorMass;
                 reactionLastPrecursorMass[i] = reaction.LastPrecursorMass;
                 reactionIsolationWidthOffset[i] = reaction.IsolationWidthOffset;
+                reactionOneOverK0Begin[i] = reaction.OneOverK0Begin;
+                reactionOneOverK0End[i] = reaction.OneOverK0End;
                 reactionCandidateStart[i] = reaction.CandidateStart;
                 reactionCandidateCount[i] = reaction.CandidateCount;
             }
 
             int[] candidateCharge = new int[candidateBatchCount];
             double[] candidateMz = new double[candidateBatchCount];
+            double[] candidateIntensity = new double[candidateBatchCount];
+            double[] candidateOneOverK0 = new double[candidateBatchCount];
             for (int i = 0; i < candidateBatchCount; i++)
             {
                 Hdf5PrecursorCandidateRecord candidate = candidates[i];
                 candidateCharge[i] = candidate.Charge;
                 candidateMz[i] = candidate.Mz;
+                candidateIntensity[i] = candidate.Intensity;
+                candidateOneOverK0[i] = candidate.OneOverK0;
             }
 
             rc = NativeMethods.Append(
@@ -269,12 +347,17 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
                 peakStart,
                 peakCount,
                 peakBatchCount,
-                peakMz,
-                peakIntensity,
-                peakResolution,
-                peakBaseline,
-                peakNoise,
-                peakCharge,
+                pinnedPeakMz.Pointer,
+                pinnedPeakIntensity.Pointer,
+                pinnedPeakResolution.Pointer,
+                pinnedPeakBaseline.Pointer,
+                pinnedPeakNoise.Pointer,
+                pinnedPeakCharge.Pointer,
+                pinnedPeakMobilityTraceStart.Pointer,
+                pinnedPeakMobilityTraceCount.Pointer,
+                traceBatchCount,
+                pinnedTraceOneOverK0Index.Pointer,
+                pinnedTraceIntensity.Pointer,
                 reactionBatchCount,
                 reactionPrecursorMass,
                 reactionIsolationWidth,
@@ -287,11 +370,15 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
                 reactionFirstPrecursorMass,
                 reactionLastPrecursorMass,
                 reactionIsolationWidthOffset,
+                reactionOneOverK0Begin,
+                reactionOneOverK0End,
                 reactionCandidateStart,
                 reactionCandidateCount,
                 candidateBatchCount,
                 candidateCharge,
                 candidateMz,
+                candidateIntensity,
+                candidateOneOverK0,
                 pendingScanFilters.Count,
                 newScanFilters.Pointers,
                 pendingActivations.Count,
@@ -314,16 +401,69 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
 
         totalScans += scanBatchCount;
         totalPeaks += peakBatchCount;
+        totalMobilityTracePoints += traceBatchCount;
         totalReactions += reactionBatchCount;
         totalCandidates += candidateBatchCount;
         FlushCount++;
         scans.Clear();
-        peaks.Clear();
+        ClearPeakBuffers();
         reactions.Clear();
         candidates.Clear();
         pendingScanFilters.Clear();
         pendingActivations.Clear();
         pendingReactionActivationTypes.Clear();
+    }
+
+
+    private static void AddOptionalValue(ref PrimitiveBuffer<double>? buffer, double value, int priorCount)
+    {
+        if (buffer is not null)
+        {
+            buffer.Add(value);
+            return;
+        }
+
+        if (value == 0)
+        {
+            return;
+        }
+
+        buffer = new PrimitiveBuffer<double>(priorCount + 1);
+        buffer.AddZeros(priorCount);
+        buffer.Add(value);
+    }
+
+    private static void AddOptionalValue(ref PrimitiveBuffer<int>? buffer, int value, int priorCount)
+    {
+        if (buffer is not null)
+        {
+            buffer.Add(value);
+            return;
+        }
+
+        if (value == 0)
+        {
+            return;
+        }
+
+        buffer = new PrimitiveBuffer<int>(priorCount + 1);
+        buffer.AddZeros(priorCount);
+        buffer.Add(value);
+    }
+
+    private void ClearPeakBuffers()
+    {
+        peakMz.Clear();
+        peakIntensity.Clear();
+        peakResolution = null;
+        peakBaseline = null;
+        peakNoise = null;
+        peakCharge = null;
+        peakMobilityTraceStart.Clear();
+        peakMobilityTraceCount.Clear();
+        traceOneOverK0Index.Clear();
+        traceIntensity.Clear();
+        bufferedMobilityTracePoints = 0;
     }
 
     private static int GetStringId(Dictionary<string, int> ids, List<string> pendingValues, string? value)
@@ -409,7 +549,9 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         double LastPrecursorMass,
         double IsolationWidthOffset,
         long CandidateStart,
-        int CandidateCount)
+        int CandidateCount,
+        double OneOverK0Begin,
+        double OneOverK0End)
     {
         public BufferedReaction(Hdf5ReactionRecord reaction, int activationTypeId, long candidateStart, int candidateCount)
             : this(
@@ -425,8 +567,109 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
                 reaction.LastPrecursorMass,
                 reaction.IsolationWidthOffset,
                 candidateStart,
-                candidateCount)
+                candidateCount,
+                reaction.OneOverK0Begin,
+                reaction.OneOverK0End)
         {
+        }
+    }
+
+
+    private sealed class PrimitiveBuffer<T>
+        where T : unmanaged
+    {
+        public PrimitiveBuffer(int capacity = 0)
+        {
+            Items = capacity == 0 ? Array.Empty<T>() : new T[capacity];
+        }
+
+        public T[] Items { get; private set; }
+
+        public int Count { get; private set; }
+
+        public void Add(T value)
+        {
+            EnsureCapacity(Count + 1);
+            Items[Count++] = value;
+        }
+
+        public void AddRange(T[] values, int count)
+        {
+            if (count < 0 || count > values.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
+            EnsureCapacity(Count + count);
+            Array.Copy(values, 0, Items, Count, count);
+            Count += count;
+        }
+
+        public void AddZeros(int count)
+        {
+            if (count < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
+            EnsureCapacity(Count + count);
+            Array.Clear(Items, Count, count);
+            Count += count;
+        }
+
+        public void Clear()
+        {
+            Count = 0;
+        }
+
+        private void EnsureCapacity(int capacity)
+        {
+            if (Items.Length >= capacity)
+            {
+                return;
+            }
+
+            int newCapacity = Items.Length == 0 ? 1024 : Items.Length * 2;
+            while (newCapacity < capacity)
+            {
+                newCapacity *= 2;
+            }
+            T[] resized = Items;
+            Array.Resize(ref resized, newCapacity);
+            Items = resized;
+        }
+    }
+
+    private sealed class PinnedBuffer<T> : IDisposable
+        where T : unmanaged
+    {
+        private GCHandle handle;
+
+        private PinnedBuffer(T[]? items, int count)
+        {
+            if (items is null || count == 0)
+            {
+                Pointer = IntPtr.Zero;
+                return;
+            }
+
+            handle = GCHandle.Alloc(items, GCHandleType.Pinned);
+            Pointer = handle.AddrOfPinnedObject();
+        }
+
+        public IntPtr Pointer { get; }
+
+        public static PinnedBuffer<T> Pin(T[]? items, int count)
+        {
+            return new PinnedBuffer<T>(items, count);
+        }
+
+        public void Dispose()
+        {
+            if (handle.IsAllocated)
+            {
+                handle.Free();
+            }
         }
     }
 
@@ -501,12 +744,17 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
             long[] peakStart,
             int[] peakCount,
             int peakTotal,
-            double[] peakMz,
-            double[] peakIntensity,
-            double[] peakResolution,
-            double[] peakBaseline,
-            double[] peakNoise,
-            int[] peakCharge,
+            IntPtr peakMz,
+            IntPtr peakIntensity,
+            IntPtr peakResolution,
+            IntPtr peakBaseline,
+            IntPtr peakNoise,
+            IntPtr peakCharge,
+            IntPtr peakMobilityTraceStart,
+            IntPtr peakMobilityTraceCount,
+            int mobilityTraceTotal,
+            IntPtr mobilityTraceOneOverK0Index,
+            IntPtr mobilityTraceIntensity,
             int reactionTotal,
             double[] reactionPrecursorMass,
             double[] reactionIsolationWidth,
@@ -519,11 +767,15 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
             double[] reactionFirstPrecursorMass,
             double[] reactionLastPrecursorMass,
             double[] reactionIsolationWidthOffset,
+            double[] reactionOneOverK0Begin,
+            double[] reactionOneOverK0End,
             long[] reactionCandidateStart,
             int[] reactionCandidateCount,
             int candidateTotal,
             int[] candidateCharge,
             double[] candidateMz,
+            double[] candidateIntensity,
+            double[] candidateOneOverK0,
             int newScanFilterTotal,
             IntPtr[] newScanFilters,
             int newActivationTotal,
