@@ -118,7 +118,7 @@ internal sealed class BrukerHdf5Converter
         {
             BrukerFrame frame = frames[ms2.FrameId];
             IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetParentPeaks(ms2.ParentFrameId);
-            List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+            List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
                 parentPeaks,
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
@@ -129,7 +129,8 @@ internal sealed class BrukerHdf5Converter
                 ms2.IsolationWidth,
                 topNprecursor,
                 intensityThreshold,
-                mzTolerancePpm);
+                mzTolerancePpm,
+                preferredCharge: ms2.PrecursorCharge ?? 0);
             Hdf5ReactionRecord reaction = CreateReaction(
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
@@ -137,7 +138,7 @@ internal sealed class BrukerHdf5Converter
                 ms2.CollisionEnergy,
                 "CID",
                 selectedPeaks,
-                evidencePeaks);
+                isotopeEvidencePeaks);
             writer.AddScan(new Hdf5ScanRecord(
                 checked((int)syntheticScanNumber++),
                 2,
@@ -257,7 +258,7 @@ internal sealed class BrukerHdf5Converter
         (double oneOverK0Begin, double oneOverK0End) = reader.ScanRangeToOneOverK0Range(ms2.FragmentFrameId, ms2.ScanBegin, ms2.ScanEnd);
         IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetTdfParentPeaks(reader, ms2.ParentFrameId);
         IReadOnlyList<double> parentOneOverK0Axis = GetTdfParentOneOverK0Axis(reader, ms2.ParentFrameId);
-        List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+        List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -274,7 +275,8 @@ internal sealed class BrukerHdf5Converter
             mzTolerancePpm,
             oneOverK0Begin,
             oneOverK0End,
-            parentOneOverK0Axis);
+            parentOneOverK0Axis,
+            preferredCharge: ms2.Charge ?? 0);
         Hdf5ReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -282,7 +284,7 @@ internal sealed class BrukerHdf5Converter
             ms2.CollisionEnergy,
             "CID",
             selectedPeaks,
-            evidencePeaks,
+            isotopeEvidencePeaks,
             oneOverK0Begin,
             oneOverK0End);
         List<Hdf5PeakRecord> fragmentPeaks = reader.ReadPasefMsMs(ms2.PrecursorId);
@@ -312,7 +314,7 @@ internal sealed class BrukerHdf5Converter
         (double oneOverK0Begin, double oneOverK0End) = reader.ScanRangeToOneOverK0Range(ms2.FrameId, ms2.ScanBegin, ms2.ScanEnd);
         IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetTdfParentPeaks(reader, parentFrameId);
         IReadOnlyList<double> parentOneOverK0Axis = GetTdfParentOneOverK0Axis(reader, parentFrameId);
-        List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+        List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -329,7 +331,8 @@ internal sealed class BrukerHdf5Converter
             mzTolerancePpm,
             oneOverK0Begin,
             oneOverK0End,
-            parentOneOverK0Axis);
+            parentOneOverK0Axis,
+            preferredCharge: 0);
         Hdf5ReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -337,7 +340,7 @@ internal sealed class BrukerHdf5Converter
             ms2.CollisionEnergy,
             "CID",
             selectedPeaks,
-            evidencePeaks,
+            isotopeEvidencePeaks,
             oneOverK0Begin,
             oneOverK0End);
         writer.AddScan(new Hdf5ScanRecord(

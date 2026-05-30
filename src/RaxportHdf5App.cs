@@ -256,7 +256,7 @@ namespace Raxport
         {
             int chargeStateInt = GetTrailerChargeState(mScanNumber);
             List<Hdf5PeakRecord> parentPeaks = CollectPeaks(mPrecursorScan);
-            List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+            List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
                 parentPeaks,
                 mReaction.PrecursorMass,
                 mReaction.IsolationWidth,
@@ -283,7 +283,7 @@ namespace Raxport
                 mReaction.IsolationWidthOffset,
                 PrecursorSelector.ExpandPrecursorCandidates(
                     precursorPeaks,
-                    evidencePeaks,
+                    isotopeEvidencePeaks,
                     mReaction.PrecursorMass,
                     mReaction.IsolationWidth,
                     topNprecursor,

@@ -3,9 +3,12 @@ namespace Raxport;
 internal static class PrecursorSelector
 {
     private const double NeutronMass = 1.003355;
+    private const double IsotopeEvidenceMzPadding = 1.5;
     private const int StrongIsotopeMatchCount = 3;
     private static readonly int[] DefaultGuessedCharges = { 2, 3, 4 };
-    private static readonly int[] ChargesInConsideration = { 1, 2, 3, 4, 5, 6 };
+    private static readonly int[] ChargesInConsideration = { 2, 3, 4, 5, 6, 1 };
+    private static readonly int[] PopularChargeOrder = { 2, 3, 4, 5, 6, 1 };
+    private static readonly int[] ConservativeFallbackCharges = { 2, 3, 4 };
     private static readonly int[] IsotopeOffsets = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
     public static List<Hdf5PeakRecord> FindPrecursorPeaks(
@@ -17,7 +20,8 @@ internal static class PrecursorSelector
         double mzTolerancePpm,
         double? oneOverK0Begin = null,
         double? oneOverK0End = null,
-        IReadOnlyList<double>? oneOverK0ByIndex = null)
+        IReadOnlyList<double>? oneOverK0ByIndex = null,
+        int preferredCharge = 0)
     {
         List<Hdf5PeakRecord> precursorPeaks = new();
         if (topN <= 0 || peaks.Count == 0)
@@ -25,7 +29,7 @@ internal static class PrecursorSelector
             return precursorPeaks;
         }
 
-        List<Hdf5PeakRecord> peaksInRange = GetPrecursorEvidencePeaks(
+        List<Hdf5PeakRecord> evidencePeaks = GetPrecursorEvidencePeaks(
             peaks,
             precursorMz,
             isolationWindow,
@@ -33,23 +37,32 @@ internal static class PrecursorSelector
             oneOverK0Begin,
             oneOverK0End,
             oneOverK0ByIndex);
-        peaksInRange = peaksInRange.OrderByDescending(o => o.Intensity).ToList();
+        evidencePeaks = evidencePeaks.OrderByDescending(peak => peak.Intensity).ToList();
+        List<Hdf5PeakRecord> isotopeEvidencePeaks = GetIsotopeEvidencePeaks(
+            peaks,
+            precursorMz,
+            isolationWindow,
+            mzTolerancePpm,
+            oneOverK0Begin,
+            oneOverK0End,
+            oneOverK0ByIndex);
 
         double totalIntensity = 0.000000001;
-        foreach (Hdf5PeakRecord peak in peaksInRange)
+        foreach (Hdf5PeakRecord peak in evidencePeaks)
         {
             totalIntensity += peak.Intensity;
         }
 
+        List<Hdf5PeakRecord> selectionPool = BuildHighIntensityPool(evidencePeaks, topN, intensityRatio, totalIntensity);
         double summedIntensity = 0;
-        for (int i = 0; i < peaksInRange.Count; i++)
+        for (int i = 0; i < selectionPool.Count; i++)
         {
             if (summedIntensity / totalIntensity > intensityRatio)
             {
                 break;
             }
 
-            Hdf5PeakRecord selectedPeak = peaksInRange[i];
+            Hdf5PeakRecord selectedPeak = selectionPool[i];
             precursorPeaks.Add(selectedPeak);
             summedIntensity += selectedPeak.Intensity;
             if (precursorPeaks.Count >= topN)
@@ -57,25 +70,12 @@ internal static class PrecursorSelector
                 break;
             }
 
-            foreach (int isotopeOffset in IsotopeOffsets)
-            {
-                bool foundIsotopicPeak = false;
-                for (int j = i + 1; j < peaksInRange.Count; j++)
-                {
-                    if (CouldBeIsotopicPeak(selectedPeak, peaksInRange[j], isotopeOffset, precursorMz, mzTolerancePpm))
-                    {
-                        foundIsotopicPeak = true;
-                        summedIntensity += peaksInRange[j].Intensity;
-                        peaksInRange.RemoveAt(j);
-                        j--;
-                    }
-                }
-
-                if (!foundIsotopicPeak)
-                {
-                    break;
-                }
-            }
+            IReadOnlyList<int> isotopeCharges = ResolveIsotopeRemovalCharges(
+                selectedPeak,
+                isotopeEvidencePeaks,
+                preferredCharge,
+                mzTolerancePpm);
+            summedIntensity += RemoveIsotopicPeaks(selectionPool, selectedPeak, i, isotopeCharges, mzTolerancePpm);
         }
 
         return precursorPeaks;
@@ -110,6 +110,153 @@ internal static class PrecursorSelector
         }
 
         return peaksInRange.OrderBy(peak => peak.Mz).ToList();
+    }
+
+    public static List<Hdf5PeakRecord> GetIsotopeEvidencePeaks(
+        IReadOnlyList<Hdf5PeakRecord> peaks,
+        double precursorMz,
+        double isolationWindow,
+        double mzTolerancePpm,
+        double? oneOverK0Begin = null,
+        double? oneOverK0End = null,
+        IReadOnlyList<double>? oneOverK0ByIndex = null)
+    {
+        return GetPrecursorEvidencePeaks(
+            peaks,
+            precursorMz,
+            isolationWindow + 2 * IsotopeEvidenceMzPadding,
+            mzTolerancePpm,
+            oneOverK0Begin,
+            oneOverK0End,
+            oneOverK0ByIndex);
+    }
+
+    private static List<Hdf5PeakRecord> BuildHighIntensityPool(
+        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        int topN,
+        double intensityRatio,
+        double totalIntensity)
+    {
+        List<Hdf5PeakRecord> pool = new();
+        int maxPoolCount = checked(topN * 2);
+        double poolIntensity = 0;
+        foreach (Hdf5PeakRecord peak in evidencePeaks)
+        {
+            if (pool.Count >= maxPoolCount)
+            {
+                break;
+            }
+
+            pool.Add(peak);
+            poolIntensity += peak.Intensity;
+            if (poolIntensity / totalIntensity >= intensityRatio)
+            {
+                break;
+            }
+        }
+
+        return pool;
+    }
+
+    private static IReadOnlyList<int> ResolveIsotopeRemovalCharges(
+        Hdf5PeakRecord selectedPeak,
+        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        int preferredCharge,
+        double mzTolerancePpm)
+    {
+        if (selectedPeak.Charge > 0)
+        {
+            return new[] { selectedPeak.Charge };
+        }
+
+        if (preferredCharge > 0)
+        {
+            return new[] { preferredCharge };
+        }
+
+        List<int> strongCharges = InferStrongChargesFromIsotopes(selectedPeak, evidencePeaks, mzTolerancePpm);
+        if (strongCharges.Count > 0)
+        {
+            return strongCharges;
+        }
+
+        foreach (int charge in ConservativeFallbackCharges)
+        {
+            if (CountIsotopeMatches(selectedPeak, evidencePeaks, charge, mzTolerancePpm) > 0)
+            {
+                return new[] { charge };
+            }
+        }
+
+        return Array.Empty<int>();
+    }
+
+    private static List<int> InferStrongChargesFromIsotopes(
+        Hdf5PeakRecord peak,
+        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        double mzTolerancePpm)
+    {
+        List<int> charges = new();
+        foreach (int charge in PopularChargeOrder)
+        {
+            if (CountIsotopeMatches(peak, evidencePeaks, charge, mzTolerancePpm) >= StrongIsotopeMatchCount)
+            {
+                charges.Add(charge);
+            }
+        }
+
+        return charges;
+    }
+
+    private static double RemoveIsotopicPeaks(
+        List<Hdf5PeakRecord> peaks,
+        Hdf5PeakRecord selectedPeak,
+        int selectedIndex,
+        IReadOnlyList<int> isotopeCharges,
+        double mzTolerancePpm)
+    {
+        if (isotopeCharges.Count == 0)
+        {
+            return 0;
+        }
+
+        double removedIntensity = 0;
+        removedIntensity += RemoveIsotopicPeaksInDirection(peaks, selectedPeak, selectedIndex, isotopeCharges, mzTolerancePpm, 1);
+        removedIntensity += RemoveIsotopicPeaksInDirection(peaks, selectedPeak, selectedIndex, isotopeCharges, mzTolerancePpm, -1);
+        return removedIntensity;
+    }
+
+    private static double RemoveIsotopicPeaksInDirection(
+        List<Hdf5PeakRecord> peaks,
+        Hdf5PeakRecord selectedPeak,
+        int selectedIndex,
+        IReadOnlyList<int> isotopeCharges,
+        double mzTolerancePpm,
+        int direction)
+    {
+        double removedIntensity = 0;
+        foreach (int isotopeOffset in IsotopeOffsets)
+        {
+            bool foundIsotopicPeak = false;
+            for (int j = selectedIndex + 1; j < peaks.Count; j++)
+            {
+
+                if (CouldBeIsotopicPeak(selectedPeak, peaks[j], isotopeOffset, direction, isotopeCharges, mzTolerancePpm))
+                {
+                    foundIsotopicPeak = true;
+                    removedIntensity += peaks[j].Intensity;
+                    peaks.RemoveAt(j);
+                    j--;
+                }
+            }
+
+            if (!foundIsotopicPeak)
+            {
+                break;
+            }
+        }
+
+        return removedIntensity;
     }
 
     public static List<Hdf5PrecursorCandidateRecord> ExpandPrecursorCandidates(
@@ -234,11 +381,6 @@ internal static class PrecursorSelector
         foreach (int charge in ChargesInConsideration)
         {
             int score = CountIsotopeMatches(peak, evidencePeaks, charge, mzTolerancePpm);
-            if (score >= StrongIsotopeMatchCount)
-            {
-                return charge;
-            }
-
             if (score > bestScore)
             {
                 bestScore = score;
@@ -374,53 +516,32 @@ internal static class PrecursorSelector
         Hdf5PeakRecord selectedPeak,
         Hdf5PeakRecord candidatePeak,
         int isotopeOffset,
-        double isolationCenterMz,
+        int direction,
+        IReadOnlyList<int> isotopeCharges,
         double mzTolerancePpm)
     {
-        double observedMzSpacing = Math.Abs(selectedPeak.Mz - candidatePeak.Mz);
-        double mzTolerance = MzToleranceDa(isolationCenterMz, mzTolerancePpm);
-        foreach (int charge in CandidateChargesForIsotopeCheck(selectedPeak, candidatePeak))
+        double expectedSign = Math.Sign(direction);
+        if (expectedSign == 0)
         {
-            double expectedMzSpacing = isotopeOffset * NeutronMass / charge;
-            if (Math.Abs(observedMzSpacing - expectedMzSpacing) <= mzTolerance)
+            return false;
+        }
+
+        double observedMzSpacing = candidatePeak.Mz - selectedPeak.Mz;
+        if (Math.Sign(observedMzSpacing) != expectedSign)
+        {
+            return false;
+        }
+
+        foreach (int charge in isotopeCharges)
+        {
+            double expectedMz = selectedPeak.Mz + expectedSign * isotopeOffset * NeutronMass / charge;
+            if (WithinMzTolerance(candidatePeak.Mz, expectedMz, mzTolerancePpm))
             {
                 return true;
             }
         }
 
         return false;
-    }
-
-    private static IEnumerable<int> CandidateChargesForIsotopeCheck(Hdf5PeakRecord selectedPeak, Hdf5PeakRecord candidatePeak)
-    {
-        int selectedCharge = selectedPeak.Charge;
-        int candidateCharge = candidatePeak.Charge;
-        if (selectedCharge > 0 && candidateCharge > 0)
-        {
-            if (selectedCharge == candidateCharge)
-            {
-                yield return selectedCharge;
-            }
-
-            yield break;
-        }
-
-        if (selectedCharge > 0)
-        {
-            yield return selectedCharge;
-            yield break;
-        }
-
-        if (candidateCharge > 0)
-        {
-            yield return candidateCharge;
-            yield break;
-        }
-
-        foreach (int charge in ChargesInConsideration)
-        {
-            yield return charge;
-        }
     }
 
     private static bool WithinMzTolerance(double observedMz, double expectedMz, double mzTolerancePpm)

@@ -67,6 +67,231 @@ public sealed class Hdf5BufferedWriterTests
         Assert.AreEqual(500.0000, candidates[0].Mz, 0.0001);
     }
 
+
+    [TestMethod]
+    public void PrecursorSelectorThermoTrailerChargeDoesNotDriveIsotopeRemoval()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.501678, 900, 0, 0, 0, 0),
+            new(502.000000, 800, 0, 0, 0, 0)
+        };
+
+        int trailerCharge = 4;
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10);
+        List<Hdf5PeakRecord> evidence = PrecursorSelector.GetPrecursorEvidencePeaks(peaks, 501.0, 4.0, 10);
+        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            selected,
+            evidence,
+            501.0,
+            4.0,
+            2,
+            10,
+            trailerCharge);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+        Assert.AreEqual(502.000000, selected[1].Mz, 0.0001);
+        Assert.AreEqual(trailerCharge, candidates[0].Charge);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorLimitsSelectionPoolByTopNMultiplier()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.000000, 1000, 0, 0, 0, 2),
+            new(500.501678, 900, 0, 0, 0, 0),
+            new(501.003355, 800, 0, 0, 0, 0),
+            new(501.505033, 700, 0, 0, 0, 0),
+            new(503.000000, 600, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorLimitsSelectionPoolByIntensityRatio()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.0, 1000, 0, 0, 0, 0),
+            new(501.0, 100, 0, 0, 0, 0),
+            new(502.0, 100, 0, 0, 0, 0),
+            new(503.0, 100, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 5, 0.5, 10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(500.0, selected[0].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorCapsSelectedPrecursorCountAtTopN()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.0, 1000, 0, 0, 0, 0),
+            new(501.0, 900, 0, 0, 0, 0),
+            new(502.0, 800, 0, 0, 0, 0),
+            new(503.0, 700, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
+
+        Assert.AreEqual(2, selected.Count);
+        CollectionAssert.AreEqual(new[] { 500.0, 501.0 }, selected.Select(peak => peak.Mz).ToArray());
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesMs1PeakChargeBeforePreferredChargeForIsotopeRemoval()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.000000, 1000, 0, 0, 0, 3),
+            new(500.334452, 900, 0, 0, 0, 0),
+            new(500.501678, 800, 0, 0, 0, 0),
+            new(502.000000, 700, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10, preferredCharge: 2);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+        Assert.AreEqual(500.501678, selected[1].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesPreferredChargeForBrukerLikeIsotopeRemoval()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(1102.024258, 1000, 0, 0, 0, 0),
+            new(1102.275096, 900, 0, 0, 0, 0),
+            new(1102.525935, 800, 0, 0, 0, 0),
+            new(1102.776774, 700, 0, 0, 0, 0),
+            new(1104.000000, 600, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 1103.0, 5.0, 3, 1.0, 10, preferredCharge: 4);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(1102.024258, selected[0].Mz, 0.0001);
+        Assert.AreEqual(1104.000000, selected[1].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorInfersStrongChargeBeforeIsotopeRemoval()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.334452, 900, 0, 0, 0, 0),
+            new(500.668903, 800, 0, 0, 0, 0),
+            new(501.003355, 700, 0, 0, 0, 0),
+            new(502.000000, 600, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 3, 1.0, 10);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+        Assert.AreEqual(502.000000, selected[1].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesPaddedIsotopeEvidenceOnlyForChargeInference()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.334452, 900, 0, 0, 0, 0),
+            new(500.668903, 800, 0, 0, 0, 0),
+            new(501.003355, 700, 0, 0, 0, 0),
+            new(502.000000, 600, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.0, 0.1, 2, 1.0, 10);
+        List<Hdf5PeakRecord> isotopeEvidence = PrecursorSelector.GetIsotopeEvidencePeaks(peaks, 500.0, 0.1, 10);
+        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            selected,
+            isotopeEvidence,
+            500.0,
+            0.1,
+            1,
+            10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+        Assert.AreEqual(3, candidates[0].Charge);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesConservativeFallbackChargeOrder()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.501678, 900, 0, 0, 0, 0),
+            new(500.334452, 800, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.5, 2.0, 2, 1.0, 10);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+        Assert.AreEqual(500.334452, selected[1].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorStopsForwardRemovalAtFirstMissingOffset()
+    {
+        Hdf5PeakRecord[] peaks =
+        {
+            new(500.000000, 1000, 0, 0, 0, 2),
+            new(501.003355, 900, 0, 0, 0, 0),
+            new(502.000000, 800, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+        Assert.AreEqual(501.003355, selected[1].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorRemovesBackwardIsotopesAndStopsAtFirstMissingOffset()
+    {
+        Hdf5PeakRecord[] withMinusOne =
+        {
+            new(500.501678, 1000, 0, 0, 0, 2),
+            new(500.000000, 900, 0, 0, 0, 0),
+            new(502.000000, 800, 0, 0, 0, 0)
+        };
+        Hdf5PeakRecord[] missingMinusOne =
+        {
+            new(501.003355, 1000, 0, 0, 0, 2),
+            new(500.000000, 900, 0, 0, 0, 0),
+            new(502.000000, 800, 0, 0, 0, 0)
+        };
+
+        List<Hdf5PeakRecord> removed = PrecursorSelector.FindPrecursorPeaks(withMinusOne, 501.0, 4.0, 2, 1.0, 10);
+        List<Hdf5PeakRecord> stopped = PrecursorSelector.FindPrecursorPeaks(missingMinusOne, 501.0, 4.0, 2, 1.0, 10);
+
+        Assert.AreEqual(2, removed.Count);
+        Assert.AreEqual(500.501678, removed[0].Mz, 0.0001);
+        Assert.AreEqual(502.000000, removed[1].Mz, 0.0001);
+        Assert.AreEqual(2, stopped.Count);
+        Assert.AreEqual(501.003355, stopped[0].Mz, 0.0001);
+        Assert.AreEqual(500.000000, stopped[1].Mz, 0.0001);
+    }
+
     [TestMethod]
     public void PrecursorSelectorExpandsUnknownChargeUsingRawDefaults()
     {
@@ -171,6 +396,31 @@ public sealed class Hdf5BufferedWriterTests
             10);
 
         Assert.AreEqual(3, candidates[0].Charge);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesHighestIsotopeScoreBeforeChargePrior()
+    {
+        Hdf5PeakRecord[] evidence =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.501678, 900, 0, 0, 0, 0),
+            new(501.003355, 800, 0, 0, 0, 0),
+            new(501.505033, 700, 0, 0, 0, 0),
+            new(502.006710, 600, 0, 0, 0, 0),
+            new(503.010065, 500, 0, 0, 0, 0)
+        };
+        Hdf5PeakRecord[] selected = { evidence[0] };
+
+        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            selected,
+            evidence,
+            500.0,
+            4.0,
+            1,
+            10);
+
+        Assert.AreEqual(2, candidates[0].Charge);
     }
 
     [TestMethod]

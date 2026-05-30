@@ -696,7 +696,19 @@ def _top_precursor_text(record):
 
 
 
-def _compact_precursor_text(record):
+def _compact_api_precursor_text(record):
+    parts = [f"api mz={_format_value(record.precursor_mass)}"]
+    api_charge = record.charge_state if record.charge_state else "NA"
+    parts.append(f"z={api_charge}")
+    k0_min, k0_max = _mobility_window_bounds(record)
+    if k0_min is not None:
+        parts.append(f"1/k0={_format_value(k0_min)}-{_format_value(k0_max)}")
+    if record.isolation_width is not None:
+        parts.append(f"width={_format_value(record.isolation_width)}")
+    return " | ".join(parts)
+
+
+def _compact_selected_precursor_text(record):
     unique_indices = _unique_candidate_indices(record)
     if not unique_indices:
         top_mz = "NA"
@@ -707,11 +719,15 @@ def _compact_precursor_text(record):
         top_mz = _format_value(top_mz_value)
         top_charge = ",".join(str(charge) for charge in _candidate_charges_for_mz(record, top_mz_value))
     k0 = _top_candidate_one_over_k0(record)
-    parts = [f"top m/z={top_mz}", f"z={top_charge}"]
+    parts = [f"selected m/z={top_mz}", f"z={top_charge}"]
     if k0 is not None:
         parts.append(f"1/k0={_format_value(k0)}")
     parts.append(f"n={len(unique_indices)}")
     return " | ".join(parts)
+
+
+def _compact_parent_title(record):
+    return f"{_compact_selected_precursor_text(record)}\n{_compact_api_precursor_text(record)}"
 
 
 def _compact_msn_title(record):
@@ -863,7 +879,7 @@ def _plot_parent_mobility(ax, record, fig, cax=None):
     ax.set_xlabel("")
     ax.tick_params(axis="x", labelbottom=False)
     ax.set_ylabel("1/k0")
-    ax.set_title(f"Parent MS1 mobility map {record.parent_scan_number}\n{_compact_precursor_text(record)}", fontsize=8, pad=3)
+    ax.set_title(f"Parent MS1 mobility map {record.parent_scan_number}\n{_compact_parent_title(record)}", fontsize=8, pad=3)
     if scatter is not None:
         _add_intensity_colorbar(fig, scatter, ax, cax=cax)
     elif cax is not None:
@@ -893,6 +909,32 @@ def _plot_parent_mobility_zoom(ax, record, fig, cax=None):
     _dedup_legend(ax, loc="upper left")
 
 
+def _parent_mobility_window_intensity(record):
+    k0_min, k0_max = _mobility_window_bounds(record)
+    mz_min, mz_max = _isolation_mz_bounds(record)
+    if k0_min is None or mz_min is None or record.parent_peak_mz.size == 0 or record.parent_mobility_mz.size == 0:
+        return None
+    mobility_mask = (
+        np.isfinite(record.parent_mobility_mz)
+        & np.isfinite(record.parent_mobility_one_over_k0)
+        & np.isfinite(record.parent_mobility_intensity)
+        & (record.parent_mobility_intensity > 0)
+        & (record.parent_mobility_mz >= mz_min)
+        & (record.parent_mobility_mz <= mz_max)
+        & (record.parent_mobility_one_over_k0 >= k0_min)
+        & (record.parent_mobility_one_over_k0 <= k0_max)
+    )
+    if not mobility_mask.any():
+        return None
+    projected = np.zeros(record.parent_peak_mz.shape[0], dtype=float)
+    parent_index_by_mz = {float(mz): index for index, mz in enumerate(record.parent_peak_mz)}
+    for mz, intensity in zip(record.parent_mobility_mz[mobility_mask], record.parent_mobility_intensity[mobility_mask]):
+        parent_index = parent_index_by_mz.get(float(mz))
+        if parent_index is not None:
+            projected[parent_index] += float(intensity)
+    return projected
+
+
 def _plot_parent(ax, record, tolerance_ppm, mz_xlim=None):
     intensity = _normalize_intensity(record.parent_peak_intensity)
     _draw_precursor_markers(ax, record, tolerance_ppm, record.parent_peak_mz, intensity, max_arrows=1)
@@ -904,18 +946,21 @@ def _plot_parent(ax, record, tolerance_ppm, mz_xlim=None):
     ax.set_ylim(0.0, 1.12)
     ax.set_xlabel("m/z")
     ax.set_ylabel("Relative intensity")
-    ax.set_title(f"Parent MS1 scan {record.parent_scan_number}\n{_compact_precursor_text(record)}", fontsize=8, pad=3)
+    ax.set_title(f"Parent MS1 scan {record.parent_scan_number}\n{_compact_parent_title(record)}", fontsize=8, pad=3)
     _dedup_legend(ax)
 
 
-def _plot_parent_zoom(ax, record, tolerance_ppm, mz_xlim=None):
+def _plot_parent_zoom(ax, record, tolerance_ppm, mz_xlim=None, use_mobility_window_intensity=False):
     if mz_xlim is None:
         mz_min, mz_max = _candidate_zoom_bounds(record)
     else:
         mz_min, mz_max = mz_xlim
     mask = _mz_mask(record.parent_peak_mz, mz_min, mz_max)
+    parent_intensity = _parent_mobility_window_intensity(record) if use_mobility_window_intensity else None
+    if parent_intensity is None:
+        parent_intensity = record.parent_peak_intensity
     mz = record.parent_peak_mz[mask]
-    intensity = _normalize_intensity(record.parent_peak_intensity[mask])
+    intensity = _normalize_intensity(parent_intensity[mask])
     _draw_precursor_markers(ax, record, tolerance_ppm, mz, intensity)
     _draw_unselected_parent_peaks(ax, record, tolerance_ppm, mz, intensity)
     if mz_xlim is None:
@@ -924,8 +969,8 @@ def _plot_parent_zoom(ax, record, tolerance_ppm, mz_xlim=None):
         ax.set_xlim(*mz_xlim)
     ax.set_ylim(0.0, 1.12)
     ax.set_xlabel("m/z")
-    ax.set_ylabel("Relative intensity")
-    title = "Parent zoom: candidate precursors"
+    ax.set_ylabel("Relative summed intensity" if use_mobility_window_intensity else "Relative intensity")
+    title = "Parent zoom: 1/k0-window summed intensity" if use_mobility_window_intensity else "Parent zoom: candidate precursors"
     k0 = _top_candidate_one_over_k0(record)
     if k0 is not None:
         title += f" | precursor 1/k0={_format_value(k0)}"
@@ -981,7 +1026,7 @@ def _plot_records(records, input_path, output_path, args):
             _hide_spacer_axis(left_bottom_cax)
             _apply_shared_x(left_top_ax, left_bottom_ax, parent_xlim)
             _plot_parent_mobility_zoom(middle_top_ax, record, fig, cax=middle_top_cax)
-            _plot_parent_zoom(middle_bottom_ax, record, args.mz_tolerance_ppm, mz_xlim=zoom_xlim)
+            _plot_parent_zoom(middle_bottom_ax, record, args.mz_tolerance_ppm, mz_xlim=zoom_xlim, use_mobility_window_intensity=True)
             _hide_spacer_axis(middle_bottom_cax)
             _apply_shared_x(middle_top_ax, middle_bottom_ax, zoom_xlim)
             _plot_msn(right_ax, record, args.mz_min, args.mz_max)
@@ -1010,6 +1055,15 @@ def _join_formatted(values):
 
 def _join_ints(values):
     return ",".join(str(int(value)) for value in values)
+
+
+def _guessed_candidate_charges(candidate_charges, parent_peak_charge, reaction_charge):
+    known_charges = set()
+    if parent_peak_charge not in (None, 0):
+        known_charges.add(int(parent_peak_charge))
+    elif reaction_charge not in (None, 0):
+        known_charges.add(int(reaction_charge))
+    return [charge for charge in candidate_charges if int(charge) not in known_charges]
 
 
 def _deduplicated_precursor_rows(record, tolerance_ppm):
@@ -1059,7 +1113,7 @@ def _deduplicated_precursor_rows(record, tolerance_ppm):
             "parent_peak_charge": parent_peak_charge if parent_peak_charge is not None else "",
             "parent_peak_delta_mz": _join_formatted(delta_mz_values),
             "parent_peak_delta_ppm": _join_formatted(delta_ppm_values),
-            "guessed_charge": _join_ints(candidate_charges) if parent_peak_charge == 0 else "",
+            "guessed_charge": _join_ints(_guessed_candidate_charges(candidate_charges, parent_peak_charge, record.charge_state)),
         })
     return rows
 
