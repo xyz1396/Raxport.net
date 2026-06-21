@@ -2,54 +2,60 @@ name: publish-linux
 
 on:
   push:
-    branches:
-      - main
+    branches: [main, master]
   pull_request:
-    branches: [ master ]
+    branches: [main, master]
   release:
-    types: [ created ]
+    types: [published]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
-  DOTNET_VERSION: '8.0.x' # The .NET SDK version to use
+  DOTNET_VERSION: 8.0.x
+  PROJECT_FILE: RaxportNetCore.csproj
 
 jobs:
   publish:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Install dependencies
-      run: dotnet restore
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Prepare build
-      run: |
-        mkdir release
-      
-    - name: Build
-      run: |
-        dotnet publish -c Release -o . -r linux-x64 -p:PublishSingleFile=true -p:PublishTrimmed=true --self-contained true
-        cp Raxport release/Raxport
-        # cp README.md release/README.md
-    
-    - name: Upload build artificats
-      uses: actions/upload-artifact@v4
-      with:
-        name: Raxport-linux
-        path: release/*
+      - name: Publish
+        run: dotnet publish ${{ env.PROJECT_FILE }} /p:PublishProfile=linux-single
 
-    - name: Upload binaries to the release
-      uses: svenstaro/upload-release-action@v2
-      # if: ${{ github.event_name == 'release' }}
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        tag: ${{ github.ref }}
-        file: release/*
-        overwrite: true
-        file_glob: true
+      - name: Verify single-file publish
+        run: |
+          test -f bin/Raxport
+          test "$(find bin -maxdepth 1 -type f | wc -l)" -eq 1
+          ls -lh bin/Raxport
+
+      - name: Smoke test
+        run: bin/Raxport -h
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p release
+          cp bin/Raxport release/Raxport-linux-x64
+          chmod +x release/Raxport-linux-x64
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raxport-linux-x64
+          path: release/Raxport-linux-x64
+          if-no-files-found: error
+
+      - name: Upload release asset
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" release/Raxport-linux-x64 --clobber

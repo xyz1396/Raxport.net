@@ -2,13 +2,13 @@
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
+		<OutputType>Exe</OutputType>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<VersionPrefix>5</VersionPrefix>
 		<Authors>XYZ</Authors>
 		<Copyright>Copyright@XYZ</Copyright>
 		<IsPackable>false</IsPackable>
-		<IsTestProject>true</IsTestProject>
 		<PlatformTarget>AnyCPU</PlatformTarget>
 		<StartupObject>Raxport.MainProgram</StartupObject>
 		<UseAppHost>true</UseAppHost>
@@ -16,6 +16,7 @@
 		<Configurations>Debug;Release;linux</Configurations>
 		<ApplicationIcon>logo.ico</ApplicationIcon>
 		<PackageIcon>logo.png</PackageIcon>
+		<DebugType>embedded</DebugType>
 	
 </PropertyGroup>
 
@@ -28,25 +29,16 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.5.0" />
-		<PackageReference Include="MSTest.TestAdapter" Version="2.2.10" />
-		<PackageReference Include="MSTest.TestFramework" Version="2.2.10" />
-		<PackageReference Include="coverlet.collector" Version="3.2.0" />
+		<Compile Remove="GlobalUsings.cs" />
+		<Compile Remove="TestRaxport.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<Reference Include="ThermoFisher.CommonCore.BackgroundSubtraction">
-		  <HintPath>dll\ThermoFisher.CommonCore.BackgroundSubtraction.dll</HintPath>
-		</Reference>
-		<Reference Include="ThermoFisher.CommonCore.Data">
-			<HintPath>dll\ThermoFisher.CommonCore.Data.dll</HintPath>
-		</Reference>
-		<Reference Include="ThermoFisher.CommonCore.MassPrecisionEstimator">
-		  <HintPath>dll\ThermoFisher.CommonCore.MassPrecisionEstimator.dll</HintPath>
-		</Reference>
-		<Reference Include="ThermoFisher.CommonCore.RawFileReader">
-			<HintPath>dll\ThermoFisher.CommonCore.RawFileReader.dll</HintPath>
-		</Reference>
+		<PackageReference Include="ThermoFisher.CommonCore.BackgroundSubtraction" Version="8.0.37" />
+		<PackageReference Include="ThermoFisher.CommonCore.Data" Version="8.0.37" />
+		<PackageReference Include="ThermoFisher.CommonCore.MassPrecisionEstimator" Version="8.0.37" />
+		<PackageReference Include="ThermoFisher.CommonCore.RawFileReader" Version="8.0.37" />
+		<PackageReference Include="ThermoFisher.CommonCore.RandomAccessReaderPlugin" Version="8.0.37" />
 	</ItemGroup>
 
 </Project>

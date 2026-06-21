@@ -2,59 +2,79 @@ name: publish-macos
 
 on:
   push:
-    branches:
-      - main
+    branches: [main, master]
   pull_request:
-    branches: [ master ]
+    branches: [main, master]
   release:
-    types: [ created ]
+    types: [published]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
-  DOTNET_VERSION: '8.0.x' # The .NET SDK version to use
+  DOTNET_VERSION: 8.0.x
+  PROJECT_FILE: RaxportNetCore.csproj
 
 jobs:
   publish:
+    runs-on: ${{ matrix.runner }}
 
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-latest
+          - rid: osx-x64
+            runner: macos-15-intel
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Install dependencies
-      run: dotnet restore
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Prepare build
-      run: |
-        mkdir release
-      
-    - name: Build
-      run: |
-        dotnet publish -c Release -o . -r osx-arm64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
-        cp Raxport release/Raxport-osx-arm64
-        dotnet publish -c Release -o . -r osx-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true
-        cp Raxport release/Raxport-osx-x64
-        # cp README.md release/README.md
-        # for test
-        chmod +x Raxport
-        ./Raxport -h
+      - name: Publish
+        run: >
+          dotnet publish ${{ env.PROJECT_FILE }}
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          --output bin/${{ matrix.rid }}
+          /p:PublishSingleFile=true
+          /p:PublishTrimmed=true
+          /p:TrimMode=partial
+          /p:EnableCompressionInSingleFile=true
+          /p:DebugType=embedded
 
-    - name: Upload build artificats
-      uses: actions/upload-artifact@v4
-      with:
-        name: Raxport-osx
-        path: release/*
+      - name: Verify single-file publish
+        run: |
+          test -f bin/${{ matrix.rid }}/Raxport
+          test "$(find bin/${{ matrix.rid }} -maxdepth 1 -type f | wc -l)" -eq 1
+          ls -lh bin/${{ matrix.rid }}/Raxport
 
-    - name: Upload binaries to the release
-      uses: svenstaro/upload-release-action@v2
-      # if: ${{ github.event_name == 'release' }}
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        tag: ${{ github.ref }}
-        file: release/*
-        overwrite: true
-        file_glob: true
+      - name: Smoke test
+        run: bin/${{ matrix.rid }}/Raxport -h
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p release
+          cp bin/${{ matrix.rid }}/Raxport release/Raxport-${{ matrix.rid }}
+          chmod +x release/Raxport-${{ matrix.rid }}
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raxport-${{ matrix.rid }}
+          path: release/Raxport-${{ matrix.rid }}
+          if-no-files-found: error
+
+      - name: Upload release asset
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" release/Raxport-${{ matrix.rid }} --clobber

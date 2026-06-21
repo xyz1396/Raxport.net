@@ -2,54 +2,72 @@ name: publish-windows
 
 on:
   push:
-    branches:
-      - main
+    branches: [main, master]
   pull_request:
-    branches: [ master ]
+    branches: [main, master]
   release:
-    types: [ created ]
+    types: [published]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
-  DOTNET_VERSION: '8.0.x' # The .NET SDK version to use
+  DOTNET_VERSION: 8.0.x
+  PROJECT_FILE: RaxportNetCore.csproj
 
 jobs:
   publish:
-
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Install dependencies
-      run: dotnet restore
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Prepare build
-      run: |
-        mkdir release
-      
-    - name: Build
-      run: |
-        dotnet publish -c Release -o . -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=true --self-contained true
-        cp Raxport.exe release/Raxport.exe
-        # cp README.md release/README.md
-    
-    - name: Upload build artificats
-      uses: actions/upload-artifact@v4
-      with:
-        name: Raxport-windows
-        path: release/*
+      - name: Publish
+        run: >
+          dotnet publish ${{ env.PROJECT_FILE }}
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output bin
+          /p:PublishSingleFile=true
+          /p:PublishTrimmed=true
+          /p:TrimMode=partial
+          /p:EnableCompressionInSingleFile=true
+          /p:DebugType=embedded
 
-    - name: Upload binaries to the release
-      uses: svenstaro/upload-release-action@v2
-      # if: ${{ github.event_name == 'release' }}
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        tag: ${{ github.ref }}
-        file: release/*
-        overwrite: true
-        file_glob: true
+      - name: Verify single-file publish
+        run: |
+          $files = Get-ChildItem bin -File
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'Raxport.exe') {
+            $files | Format-Table Name, Length
+            throw 'Expected exactly one top-level published file: bin\Raxport.exe'
+          }
+          Get-Item bin\Raxport.exe | Format-Table Name, Length
+
+      - name: Smoke test
+        run: .\bin\Raxport.exe -h
+
+      - name: Prepare artifact
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item bin\Raxport.exe release\Raxport-win-x64.exe
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raxport-win-x64
+          path: release/Raxport-win-x64.exe
+          if-no-files-found: error
+
+      - name: Upload release asset
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" release/Raxport-win-x64.exe --clobber
