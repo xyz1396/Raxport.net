@@ -33,19 +33,19 @@ AOT publish is not used because it gives Thermo DLL/native interop errors:
 Linux/macOS bash:
 
 ```bash
-export DOTNET_GCHeapHardLimit=0x200000000
+export DOTNET_GCHeapHardLimit=0x1000000000
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:DOTNET_GCHeapHardLimit = "0x200000000"
+$env:DOTNET_GCHeapHardLimit = "0x1000000000"
 ```
 
 Windows CMD:
 
 ```cmd
-set DOTNET_GCHeapHardLimit=0x200000000
+set DOTNET_GCHeapHardLimit=0x1000000000
 ```
 
 Heap hex values:
@@ -54,7 +54,14 @@ Heap hex values:
 0x100000000 = 4 GiB
 0x200000000 = 8 GiB
 0x400000000 = 16 GiB
+0x800000000 = 32 GiB
+0x1000000000 = 64 GiB
+0x2000000000 = 128 GiB
 ```
+
+### HDF5 compression level
+
+Raxport defaults to `--hdf5-compression-level 1` to reduce conversion time while keeping gzip compression enabled. Use `--hdf5-compression-level 6` for the older smaller-output behavior, or `--hdf5-compression-level 0` when write speed matters more than file size.
 
 ### heap size and -p
 
@@ -67,10 +74,10 @@ Use a smaller `-p` when the heap limit is small or when running many files with 
 ./bin/Raxport-linux-x64 -i 'input path' -o 'output path' -j 6 -p 1
 
 # Default balance, about 20M buffered peaks per process.
-export DOTNET_GCHeapHardLimit=0x200000000
+export DOTNET_GCHeapHardLimit=0x1000000000
 ./bin/Raxport-linux-x64 -i 'input path' -o 'output path' -j 6 -p 2
 
 # Higher memory per process, fewer HDF5 flushes.
-export DOTNET_GCHeapHardLimit=0x400000000
+export DOTNET_GCHeapHardLimit=0x2000000000
 ./bin/Raxport-linux-x64 -i 'input path' -o 'output path' -j 6 -p 3
 ```

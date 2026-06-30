@@ -115,7 +115,7 @@ static hid_t create_fixed_utf8_string_type(size_t size)
     return type;
 }
 
-static hid_t create_dataset(hid_t group, const char *name, hid_t type, hsize_t chunk)
+static hid_t create_dataset(hid_t group, const char *name, hid_t type, hsize_t chunk, int compression_level)
 {
     hsize_t dims[1] = {0};
     hsize_t maxdims[1] = {H5S_UNLIMITED};
@@ -130,11 +130,13 @@ static hid_t create_dataset(hid_t group, const char *name, hid_t type, hsize_t c
     if (H5Pset_chunk(plist, 1, chunks) < 0) {
         goto done;
     }
-    if (H5Pset_shuffle(plist) < 0) {
-        goto done;
-    }
-    if (H5Pset_deflate(plist, 6) < 0) {
-        goto done;
+    if (compression_level > 0) {
+        if (H5Pset_shuffle(plist) < 0) {
+            goto done;
+        }
+        if (H5Pset_deflate(plist, (unsigned int)compression_level) < 0) {
+            goto done;
+        }
     }
 
     dataset = H5Dcreate2(group, name, type, space, H5P_DEFAULT, plist, H5P_DEFAULT);
@@ -338,7 +340,7 @@ done:
     return rc;
 }
 
-static int create_all_datasets(RaxH5Writer *writer)
+static int create_all_datasets(RaxH5Writer *writer, int compression_level)
 {
     hid_t scan_filter_string_type = create_fixed_utf8_string_type(SCAN_FILTER_STRING_SIZE);
     hid_t activation_string_type = create_fixed_utf8_string_type(ACTIVATION_STRING_SIZE);
@@ -353,53 +355,53 @@ static int create_all_datasets(RaxH5Writer *writer)
         return RAX_FAIL;
     }
 
-    writer->scan_number = create_dataset(writer->scans, "scan_number", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->ms_order = create_dataset(writer->scans, "ms_order", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->retention_time = create_dataset(writer->scans, "retention_time", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->tic = create_dataset(writer->scans, "tic", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->scan_filter_id = create_dataset(writer->scans, "scan_filter_id", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->activation_id = create_dataset(writer->scans, "activation_id", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->parent_scan_number = create_dataset(writer->scans, "parent_scan_number", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->reaction_start = create_dataset(writer->scans, "reaction_start", H5T_NATIVE_LLONG, SCAN_CHUNK);
-    writer->reaction_count = create_dataset(writer->scans, "reaction_count", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->peak_start = create_dataset(writer->scans, "peak_start", H5T_NATIVE_LLONG, SCAN_CHUNK);
-    writer->peak_count = create_dataset(writer->scans, "peak_count", H5T_NATIVE_INT, SCAN_CHUNK);
+    writer->scan_number = create_dataset(writer->scans, "scan_number", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->ms_order = create_dataset(writer->scans, "ms_order", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->retention_time = create_dataset(writer->scans, "retention_time", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->tic = create_dataset(writer->scans, "tic", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->scan_filter_id = create_dataset(writer->scans, "scan_filter_id", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->activation_id = create_dataset(writer->scans, "activation_id", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->parent_scan_number = create_dataset(writer->scans, "parent_scan_number", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->reaction_start = create_dataset(writer->scans, "reaction_start", H5T_NATIVE_LLONG, SCAN_CHUNK, compression_level);
+    writer->reaction_count = create_dataset(writer->scans, "reaction_count", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->peak_start = create_dataset(writer->scans, "peak_start", H5T_NATIVE_LLONG, SCAN_CHUNK, compression_level);
+    writer->peak_count = create_dataset(writer->scans, "peak_count", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
 
-    writer->peak_mz = create_dataset(writer->peaks, "mz", H5T_NATIVE_DOUBLE, PEAK_CHUNK);
-    writer->peak_intensity = create_dataset(writer->peaks, "intensity", H5T_NATIVE_DOUBLE, PEAK_CHUNK);
-    writer->peak_resolution = create_dataset(writer->peaks, "resolution", H5T_NATIVE_DOUBLE, PEAK_CHUNK);
-    writer->peak_baseline = create_dataset(writer->peaks, "baseline", H5T_NATIVE_DOUBLE, PEAK_CHUNK);
-    writer->peak_noise = create_dataset(writer->peaks, "noise", H5T_NATIVE_DOUBLE, PEAK_CHUNK);
-    writer->peak_charge = create_dataset(writer->peaks, "charge", H5T_NATIVE_INT, PEAK_CHUNK);
-    writer->peak_mobility_trace_start = create_dataset(writer->peaks, "mobility_trace_start", H5T_NATIVE_LLONG, PEAK_CHUNK);
-    writer->peak_mobility_trace_count = create_dataset(writer->peaks, "mobility_trace_count", H5T_NATIVE_INT, PEAK_CHUNK);
+    writer->peak_mz = create_dataset(writer->peaks, "mz", H5T_NATIVE_DOUBLE, PEAK_CHUNK, compression_level);
+    writer->peak_intensity = create_dataset(writer->peaks, "intensity", H5T_NATIVE_DOUBLE, PEAK_CHUNK, compression_level);
+    writer->peak_resolution = create_dataset(writer->peaks, "resolution", H5T_NATIVE_DOUBLE, PEAK_CHUNK, compression_level);
+    writer->peak_baseline = create_dataset(writer->peaks, "baseline", H5T_NATIVE_DOUBLE, PEAK_CHUNK, compression_level);
+    writer->peak_noise = create_dataset(writer->peaks, "noise", H5T_NATIVE_DOUBLE, PEAK_CHUNK, compression_level);
+    writer->peak_charge = create_dataset(writer->peaks, "charge", H5T_NATIVE_INT, PEAK_CHUNK, compression_level);
+    writer->peak_mobility_trace_start = create_dataset(writer->peaks, "mobility_trace_start", H5T_NATIVE_LLONG, PEAK_CHUNK, compression_level);
+    writer->peak_mobility_trace_count = create_dataset(writer->peaks, "mobility_trace_count", H5T_NATIVE_INT, PEAK_CHUNK, compression_level);
 
-    writer->trace_one_over_k0_index = create_dataset(writer->peak_mobility_traces, "one_over_k0_index", H5T_NATIVE_INT, PEAK_CHUNK);
-    writer->trace_intensity = create_dataset(writer->peak_mobility_traces, "intensity", H5T_NATIVE_FLOAT, PEAK_CHUNK);
+    writer->trace_one_over_k0_index = create_dataset(writer->peak_mobility_traces, "one_over_k0_index", H5T_NATIVE_INT, PEAK_CHUNK, compression_level);
+    writer->trace_intensity = create_dataset(writer->peak_mobility_traces, "intensity", H5T_NATIVE_FLOAT, PEAK_CHUNK, compression_level);
 
-    writer->reaction_precursor_mass = create_dataset(writer->reactions, "precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_isolation_width = create_dataset(writer->reactions, "isolation_width", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_charge_state = create_dataset(writer->reactions, "charge_state", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->reaction_collision_energy = create_dataset(writer->reactions, "collision_energy", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_collision_energy_valid = create_dataset(writer->reactions, "collision_energy_valid", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->reaction_activation_type_id = create_dataset(writer->reactions, "activation_type_id", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->reaction_multiple_activation = create_dataset(writer->reactions, "multiple_activation", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->reaction_precursor_range_valid = create_dataset(writer->reactions, "precursor_range_valid", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->reaction_first_precursor_mass = create_dataset(writer->reactions, "first_precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_last_precursor_mass = create_dataset(writer->reactions, "last_precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_isolation_width_offset = create_dataset(writer->reactions, "isolation_width_offset", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_one_over_k0_begin = create_dataset(writer->reactions, "one_over_k0_begin", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_one_over_k0_end = create_dataset(writer->reactions, "one_over_k0_end", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->reaction_candidate_start = create_dataset(writer->reactions, "candidate_start", H5T_NATIVE_LLONG, SCAN_CHUNK);
-    writer->reaction_candidate_count = create_dataset(writer->reactions, "candidate_count", H5T_NATIVE_INT, SCAN_CHUNK);
+    writer->reaction_precursor_mass = create_dataset(writer->reactions, "precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_isolation_width = create_dataset(writer->reactions, "isolation_width", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_charge_state = create_dataset(writer->reactions, "charge_state", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->reaction_collision_energy = create_dataset(writer->reactions, "collision_energy", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_collision_energy_valid = create_dataset(writer->reactions, "collision_energy_valid", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->reaction_activation_type_id = create_dataset(writer->reactions, "activation_type_id", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->reaction_multiple_activation = create_dataset(writer->reactions, "multiple_activation", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->reaction_precursor_range_valid = create_dataset(writer->reactions, "precursor_range_valid", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->reaction_first_precursor_mass = create_dataset(writer->reactions, "first_precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_last_precursor_mass = create_dataset(writer->reactions, "last_precursor_mass", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_isolation_width_offset = create_dataset(writer->reactions, "isolation_width_offset", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_one_over_k0_begin = create_dataset(writer->reactions, "one_over_k0_begin", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_one_over_k0_end = create_dataset(writer->reactions, "one_over_k0_end", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->reaction_candidate_start = create_dataset(writer->reactions, "candidate_start", H5T_NATIVE_LLONG, SCAN_CHUNK, compression_level);
+    writer->reaction_candidate_count = create_dataset(writer->reactions, "candidate_count", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
 
-    writer->candidate_charge = create_dataset(writer->candidates, "charge", H5T_NATIVE_INT, SCAN_CHUNK);
-    writer->candidate_mz = create_dataset(writer->candidates, "mz", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->candidate_intensity = create_dataset(writer->candidates, "intensity", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->candidate_one_over_k0 = create_dataset(writer->candidates, "one_over_k0", H5T_NATIVE_DOUBLE, SCAN_CHUNK);
-    writer->scan_filter_value = create_dataset(writer->string_tables, "scan_filter", scan_filter_string_type, SCAN_CHUNK);
-    writer->activation_value = create_dataset(writer->string_tables, "activation", activation_string_type, SCAN_CHUNK);
-    writer->reaction_activation_type_value = create_dataset(writer->string_tables, "reaction_activation_type", activation_string_type, SCAN_CHUNK);
+    writer->candidate_charge = create_dataset(writer->candidates, "charge", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->candidate_mz = create_dataset(writer->candidates, "mz", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->candidate_intensity = create_dataset(writer->candidates, "intensity", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->candidate_one_over_k0 = create_dataset(writer->candidates, "one_over_k0", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->scan_filter_value = create_dataset(writer->string_tables, "scan_filter", scan_filter_string_type, SCAN_CHUNK, compression_level);
+    writer->activation_value = create_dataset(writer->string_tables, "activation", activation_string_type, SCAN_CHUNK, compression_level);
+    writer->reaction_activation_type_value = create_dataset(writer->string_tables, "reaction_activation_type", activation_string_type, SCAN_CHUNK, compression_level);
 
     if (writer->scan_number >= 0 && writer->ms_order >= 0 && writer->retention_time >= 0 &&
         writer->tic >= 0 && writer->scan_filter_id >= 0 && writer->activation_id >= 0 &&
@@ -429,7 +431,7 @@ static int create_all_datasets(RaxH5Writer *writer)
 }
 
 RAXPORT_API int rax_h5_create(const char *path, const char *source_raw_file, const char *instrument_model,
-                  const char *raxport_version, RaxH5Writer **out_writer, char *error, int error_len)
+                  const char *raxport_version, int compression_level, RaxH5Writer **out_writer, char *error, int error_len)
 {
     RaxH5Writer *writer = NULL;
     if (out_writer == NULL) {
@@ -437,6 +439,10 @@ RAXPORT_API int rax_h5_create(const char *path, const char *source_raw_file, con
         return RAX_FAIL;
     }
     *out_writer = NULL;
+    if (compression_level < 0 || compression_level > 9) {
+        set_error(error, error_len, "HDF5 compression level must be between 0 and 9.");
+        return RAX_FAIL;
+    }
     writer = (RaxH5Writer *)calloc(1, sizeof(RaxH5Writer));
     if (writer == NULL) {
         set_error(error, error_len, "Unable to allocate HDF5 writer.");
@@ -473,7 +479,7 @@ RAXPORT_API int rax_h5_create(const char *path, const char *source_raw_file, con
         return RAX_FAIL;
     }
 
-    if (create_all_datasets(writer) != RAX_OK) {
+    if (create_all_datasets(writer, compression_level) != RAX_OK) {
         set_error(error, error_len, "Unable to create HDF5 datasets.");
         rax_h5_close(writer, error, error_len);
         return RAX_FAIL;

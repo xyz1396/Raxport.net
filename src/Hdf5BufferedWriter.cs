@@ -103,7 +103,8 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         string sourceRawFile,
         string instrumentModel,
         string raxportVersion,
-        long maxBufferedPeaks)
+        long maxBufferedPeaks,
+        int compressionLevel = Hdf5BufferDefaults.DefaultHdf5CompressionLevel)
     {
         if (maxBufferedPeaks <= 0)
         {
@@ -111,11 +112,15 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         }
 
         this.path = path;
+        if (compressionLevel < 0 || compressionLevel > 9)
+        {
+            throw new ArgumentOutOfRangeException(nameof(compressionLevel), "HDF5 compression level must be between 0 and 9.");
+        }
         this.maxBufferedPeaks = maxBufferedPeaks;
 
         byte[] error = new byte[ErrorBufferLength];
         Stopwatch writeTimer = Stopwatch.StartNew();
-        int rc = NativeMethods.Create(path, sourceRawFile, instrumentModel, raxportVersion, out handle, error, error.Length);
+        int rc = NativeMethods.Create(path, sourceRawFile, instrumentModel, raxportVersion, compressionLevel, out handle, error, error.Length);
         writeTimer.Stop();
         HdfWriteElapsed += writeTimer.Elapsed;
         if (rc != 0 || handle == IntPtr.Zero)
@@ -724,6 +729,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
             string sourceRawFile,
             string instrumentModel,
             string raxportVersion,
+            int compressionLevel,
             out IntPtr writer,
             byte[] error,
             int errorLength);

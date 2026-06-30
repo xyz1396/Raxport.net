@@ -13,6 +13,7 @@ internal sealed class BrukerHdf5Converter
     private readonly int topNprecursor;
     private readonly double mzTolerancePpm;
     private readonly long maxBufferedPeaks;
+    private readonly int hdf5CompressionLevel;
     private readonly double intensityThreshold;
     private readonly Dictionary<long, BrukerFrame> frames = new();
     private readonly Dictionary<long, IReadOnlyList<Hdf5PeakRecord>> parentPeaksByFrame = new();
@@ -28,6 +29,7 @@ internal sealed class BrukerHdf5Converter
         int topNprecursor,
         double mzTolerancePpm,
         long maxBufferedPeaks,
+        int hdf5CompressionLevel = Hdf5BufferDefaults.DefaultHdf5CompressionLevel,
         double intensityThreshold = 0.99)
     {
         this.inputPath = inputPath;
@@ -35,6 +37,7 @@ internal sealed class BrukerHdf5Converter
         this.topNprecursor = topNprecursor;
         this.mzTolerancePpm = mzTolerancePpm;
         this.maxBufferedPeaks = maxBufferedPeaks;
+        this.hdf5CompressionLevel = hdf5CompressionLevel;
         this.intensityThreshold = intensityThreshold;
     }
 
@@ -118,15 +121,19 @@ internal sealed class BrukerHdf5Converter
         {
             BrukerFrame frame = frames[ms2.FrameId];
             IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetParentPeaks(ms2.ParentFrameId);
+            List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+                parentPeaks,
+                ms2.TriggerMass,
+                ms2.IsolationWidth,
+                mzTolerancePpm);
             List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
                 parentPeaks,
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
                 mzTolerancePpm);
-            List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaks(
-                parentPeaks,
-                ms2.TriggerMass,
-                ms2.IsolationWidth,
+            List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+                evidencePeaks,
+                isotopeEvidencePeaks,
                 topNprecursor,
                 intensityThreshold,
                 mzTolerancePpm,
@@ -232,7 +239,7 @@ internal sealed class BrukerHdf5Converter
 
     private Hdf5BufferedWriter CreateWriter(string outputFile, string instrumentModel)
     {
-        return new Hdf5BufferedWriter(outputFile, inputPath, instrumentModel, RaxportVersion, maxBufferedPeaks);
+        return new Hdf5BufferedWriter(outputFile, inputPath, instrumentModel, RaxportVersion, maxBufferedPeaks, hdf5CompressionLevel);
     }
 
     private static Hdf5ScanRecord CreateMs1Scan(BrukerFrame frame, IReadOnlyList<Hdf5PeakRecord> peaks)
@@ -258,6 +265,14 @@ internal sealed class BrukerHdf5Converter
         (double oneOverK0Begin, double oneOverK0End) = reader.ScanRangeToOneOverK0Range(ms2.FragmentFrameId, ms2.ScanBegin, ms2.ScanEnd);
         IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetTdfParentPeaks(reader, ms2.ParentFrameId);
         IReadOnlyList<double> parentOneOverK0Axis = GetTdfParentOneOverK0Axis(reader, ms2.ParentFrameId);
+        List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+            parentPeaks,
+            ms2.IsolationMz,
+            ms2.IsolationWidth,
+            mzTolerancePpm,
+            oneOverK0Begin,
+            oneOverK0End,
+            parentOneOverK0Axis);
         List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
@@ -266,16 +281,12 @@ internal sealed class BrukerHdf5Converter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaks(
-            parentPeaks,
-            ms2.IsolationMz,
-            ms2.IsolationWidth,
+        List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+            evidencePeaks,
+            isotopeEvidencePeaks,
             topNprecursor,
             intensityThreshold,
             mzTolerancePpm,
-            oneOverK0Begin,
-            oneOverK0End,
-            parentOneOverK0Axis,
             preferredCharge: ms2.Charge ?? 0);
         Hdf5ReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
@@ -314,6 +325,14 @@ internal sealed class BrukerHdf5Converter
         (double oneOverK0Begin, double oneOverK0End) = reader.ScanRangeToOneOverK0Range(ms2.FrameId, ms2.ScanBegin, ms2.ScanEnd);
         IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetTdfParentPeaks(reader, parentFrameId);
         IReadOnlyList<double> parentOneOverK0Axis = GetTdfParentOneOverK0Axis(reader, parentFrameId);
+        List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+            parentPeaks,
+            ms2.IsolationMz,
+            ms2.IsolationWidth,
+            mzTolerancePpm,
+            oneOverK0Begin,
+            oneOverK0End,
+            parentOneOverK0Axis);
         List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
@@ -322,16 +341,12 @@ internal sealed class BrukerHdf5Converter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaks(
-            parentPeaks,
-            ms2.IsolationMz,
-            ms2.IsolationWidth,
+        List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+            evidencePeaks,
+            isotopeEvidencePeaks,
             topNprecursor,
             intensityThreshold,
             mzTolerancePpm,
-            oneOverK0Begin,
-            oneOverK0End,
-            parentOneOverK0Axis,
             preferredCharge: 0);
         Hdf5ReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
@@ -596,6 +611,11 @@ internal sealed class BrukerHdf5Converter
 
     private List<PasefMsMsInfo> ReadPasefMsMsInfo(NativeSqliteConnection database)
     {
+        if (!TableExists(database, "PasefFrameMsMsInfo") || !TableExists(database, "Precursors"))
+        {
+            return new List<PasefMsMsInfo>();
+        }
+
         Dictionary<long, PasefMsMsInfo> byPrecursor = new();
         string sql =
             "SELECT p.Id, p.Charge, p.Parent, m.Frame, f.Time, m.ScanNumBegin, m.ScanNumEnd, " +
@@ -630,6 +650,11 @@ internal sealed class BrukerHdf5Converter
 
     private static List<DiaMsMsInfo> ReadDiaMsMsInfo(NativeSqliteConnection database)
     {
+        if (!TableExists(database, "DiaFrameMsMsInfo") || !TableExists(database, "DiaFrameMsMsWindows"))
+        {
+            return new List<DiaMsMsInfo>();
+        }
+
         List<DiaMsMsInfo> rows = new();
         string sql =
             "SELECT i.Frame, i.WindowGroup, w.ScanNumBegin, w.ScanNumEnd, w.IsolationMz, " +
@@ -650,6 +675,17 @@ internal sealed class BrukerHdf5Converter
         }
 
         return rows;
+    }
+
+    private static bool TableExists(NativeSqliteConnection database, string tableName)
+    {
+        string escapedTableName = tableName.Replace("'", "''");
+        foreach (SqliteRow _ in database.Query($"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '{escapedTableName}' LIMIT 1"))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private string PrepareAnalysisDirectory(string path)
@@ -722,6 +758,7 @@ internal sealed class BrukerHdf5Converter
         Console.WriteLine($"MS2 rows planned    : {ms2Count:N0}");
         Console.WriteLine($"Precursors planned  : {precursorCount:N0}");
         Console.WriteLine($"Peak flush limit    : {maxBufferedPeaks:N0} peaks");
+        Console.WriteLine($"HDF5 compression    : gzip level {hdf5CompressionLevel:N0}");
         Console.WriteLine($"Top precursor count : {topNprecursor:N0}");
         Console.WriteLine($"m/z tolerance       : {mzTolerancePpm:0.###} ppm");
         Console.WriteLine("============================================================");

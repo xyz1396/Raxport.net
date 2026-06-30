@@ -23,10 +23,9 @@ internal static class PrecursorSelector
         IReadOnlyList<double>? oneOverK0ByIndex = null,
         int preferredCharge = 0)
     {
-        List<Hdf5PeakRecord> precursorPeaks = new();
         if (topN <= 0 || peaks.Count == 0)
         {
-            return precursorPeaks;
+            return new List<Hdf5PeakRecord>();
         }
 
         List<Hdf5PeakRecord> evidencePeaks = GetPrecursorEvidencePeaks(
@@ -37,7 +36,6 @@ internal static class PrecursorSelector
             oneOverK0Begin,
             oneOverK0End,
             oneOverK0ByIndex);
-        evidencePeaks = evidencePeaks.OrderByDescending(peak => peak.Intensity).ToList();
         List<Hdf5PeakRecord> isotopeEvidencePeaks = GetIsotopeEvidencePeaks(
             peaks,
             precursorMz,
@@ -47,13 +45,37 @@ internal static class PrecursorSelector
             oneOverK0End,
             oneOverK0ByIndex);
 
+        return FindPrecursorPeaksFromEvidence(
+            evidencePeaks,
+            isotopeEvidencePeaks,
+            topN,
+            intensityRatio,
+            mzTolerancePpm,
+            preferredCharge);
+    }
+
+    public static List<Hdf5PeakRecord> FindPrecursorPeaksFromEvidence(
+        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        IReadOnlyList<Hdf5PeakRecord> isotopeEvidencePeaks,
+        int topN,
+        double intensityRatio,
+        double mzTolerancePpm,
+        int preferredCharge = 0)
+    {
+        List<Hdf5PeakRecord> precursorPeaks = new();
+        if (topN <= 0 || evidencePeaks.Count == 0)
+        {
+            return precursorPeaks;
+        }
+
+        List<Hdf5PeakRecord> intensityOrderedEvidencePeaks = evidencePeaks.OrderByDescending(peak => peak.Intensity).ToList();
         double totalIntensity = 0.000000001;
-        foreach (Hdf5PeakRecord peak in evidencePeaks)
+        foreach (Hdf5PeakRecord peak in intensityOrderedEvidencePeaks)
         {
             totalIntensity += peak.Intensity;
         }
 
-        List<Hdf5PeakRecord> selectionPool = BuildHighIntensityPool(evidencePeaks, topN, intensityRatio, totalIntensity);
+        List<Hdf5PeakRecord> selectionPool = BuildHighIntensityPool(intensityOrderedEvidencePeaks, topN, intensityRatio, totalIntensity);
         double summedIntensity = 0;
         for (int i = 0; i < selectionPool.Count; i++)
         {
@@ -336,7 +358,7 @@ internal static class PrecursorSelector
             }
         }
 
-        return candidates;
+        return DeduplicateCandidates(candidates, mzTolerancePpm, maxCandidates);
 
         void AddOrKeepBest(Hdf5PeakRecord peak, int charge)
         {
@@ -364,6 +386,39 @@ internal static class PrecursorSelector
                 candidates.Add(CreateCandidate(peak, charge));
             }
         }
+    }
+
+    private static List<Hdf5PrecursorCandidateRecord> DeduplicateCandidates(
+        IReadOnlyList<Hdf5PrecursorCandidateRecord> candidates,
+        double mzTolerancePpm,
+        int maxCandidates)
+    {
+        List<Hdf5PrecursorCandidateRecord> deduplicated = new();
+        foreach (Hdf5PrecursorCandidateRecord candidate in candidates)
+        {
+            bool merged = false;
+            for (int i = 0; i < deduplicated.Count; i++)
+            {
+                Hdf5PrecursorCandidateRecord existing = deduplicated[i];
+                if (existing.Charge == candidate.Charge && WithinMzTolerance(existing.Mz, candidate.Mz, mzTolerancePpm))
+                {
+                    if (candidate.Intensity > existing.Intensity)
+                    {
+                        deduplicated[i] = candidate;
+                    }
+
+                    merged = true;
+                    break;
+                }
+            }
+
+            if (!merged && deduplicated.Count < maxCandidates)
+            {
+                deduplicated.Add(candidate);
+            }
+        }
+
+        return deduplicated;
     }
 
     private static Hdf5PrecursorCandidateRecord CreateCandidate(Hdf5PeakRecord peak, int charge)

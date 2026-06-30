@@ -355,6 +355,30 @@ public sealed class Hdf5BufferedWriterTests
     }
 
     [TestMethod]
+    public void PrecursorSelectorDeduplicatesSameChargeWithinMzTolerance()
+    {
+        Hdf5PeakRecord[] selected =
+        {
+            new(430.88861083984375, 100, 0, 0, 0, 3),
+            new(430.8926696777344, 200, 0, 0, 0, 3),
+            new(431.02, 50, 0, 0, 0, 3)
+        };
+
+        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            selected,
+            Array.Empty<Hdf5PeakRecord>(),
+            431.0,
+            2.0,
+            5,
+            10);
+
+        Assert.AreEqual(2, candidates.Count);
+        Assert.AreEqual(430.8926696777344, candidates[0].Mz, 0.0000001);
+        Assert.AreEqual(200, candidates[0].Intensity, 0.0001);
+        Assert.AreEqual(431.02, candidates[1].Mz, 0.0000001);
+    }
+
+    [TestMethod]
     public void PrecursorSelectorUsesRealPeakChargeBeforePreferredCharge()
     {
         Hdf5PeakRecord[] selected =

@@ -2,9 +2,9 @@ name: publish-macos
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, dev ]
   release:
     types: [ created ]
   workflow_dispatch:
@@ -24,10 +24,12 @@ jobs:
           - profile: osx-x64-single-file
             artifact: Raxport-osx-x64
             triplet: x64-osx
+            sqlite_triplet: x64-osx-dynamic
             runner: macos-15-intel
           - profile: osx-arm64-single-file
             artifact: Raxport-osx-arm64
             triplet: arm64-osx
+            sqlite_triplet: arm64-osx-dynamic
             runner: macos-15
 
     runs-on: ${{ matrix.runner }}
@@ -50,9 +52,11 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
           ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
-      - name: Install HDF5
+      - name: Install native libraries
         shell: bash
-        run: ./vcpkg/vcpkg install hdf5:${{ matrix.triplet }}
+        run: |
+          ./vcpkg/vcpkg install hdf5:${{ matrix.triplet }}
+          ./vcpkg/vcpkg install sqlite3:${{ matrix.sqlite_triplet }}
 
       - name: Publish
         shell: bash

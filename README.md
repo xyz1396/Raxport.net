@@ -82,6 +82,7 @@ Options:
 | `-o PATH` | input/current directory | Output directory for generated `.h5` files. |
 | `-j N` | `6` | Maximum child Raxport processes when converting multiple RAW files. |
 | `-p N` | `2` | HDF5 peak flush units. One unit is 10,000,000 peak rows, so `-p 2` flushes at about 20,000,000 buffered peak rows. |
+| `--hdf5-compression-level N` | `1` | HDF5 gzip compression level 0-9. `0` disables compression, lower levels write faster, and `6` preserves the earlier smaller-output behavior. |
 | `-n N` | `15` | Maximum precursor candidates stored for each MSn scan. |
 | `--mz-tolerance-ppm PPM` | `10` | Precursor m/z matching tolerance in ppm. |
 | `-m` | off | Merge adjacent MS1 scans. |
@@ -122,6 +123,8 @@ flowchart TD
 The `/scans` group contains one row per MS scan. For each scan, `peak_start` and `peak_count` select that scan's peak rows from `/peaks`. MS1 scans have `parent_scan_number = 0`, `reaction_start = -1`, and `reaction_count = 0`. MSn scans store the parent precursor scan number and point to one row in `/reactions`.
 
 The `/peaks` group stores centroid or segmented peak arrays. Centroid peaks include `resolution`, `baseline`, `noise`, and `charge`; segmented peaks use `0` for fields not available from the segmented stream. Bruker TDF MS1 peaks keep the collapsed v3 m/z and area in `/peaks`, while `mobility_trace_start` and `mobility_trace_count` point to mobility-resolved evidence in `/peak_mobility_traces`. Peaks without mobility traces use `mobility_trace_start = -1` and `mobility_trace_count = 0`.
+
+Raxport uses HDF5 gzip compression level 1 by default to favor conversion throughput. Use `--hdf5-compression-level 6` for smaller files at the older, slower compression setting, or `--hdf5-compression-level 0` for uncompressed chunked output.
 
 The `/peak_mobility_traces` group stores flat parallel `one_over_k0_index` and `intensity` arrays for Bruker TDF MS1 peaks. Trace intensities come from `tims_read_scans_v2` peaks matched to the collapsed centroid m/z using `--mz-tolerance-ppm`.
 

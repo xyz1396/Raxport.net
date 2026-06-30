@@ -2,9 +2,9 @@ name: publish-linux
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, dev ]
   release:
     types: [ created ]
   workflow_dispatch:
@@ -39,9 +39,11 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
           ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
-      - name: Install HDF5
+      - name: Install native libraries
         shell: bash
-        run: ./vcpkg/vcpkg install hdf5:x64-linux
+        run: |
+          ./vcpkg/vcpkg install hdf5:x64-linux
+          ./vcpkg/vcpkg install sqlite3:x64-linux-dynamic
 
       - name: Publish
         shell: bash

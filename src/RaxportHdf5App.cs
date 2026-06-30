@@ -15,6 +15,7 @@ namespace Raxport
         public const long PeaksPerFlushUnit = 10_000_000;
         public const int DefaultPeakFlushUnits = 2;
         public const long DefaultMaxBufferedPeaks = DefaultPeakFlushUnits * PeaksPerFlushUnit;
+        public const int DefaultHdf5CompressionLevel = 1;
     }
 
     public class FTwriter
@@ -32,6 +33,7 @@ namespace Raxport
         private readonly int[] chargesInConsideration = { 2, 3, 4 };
         public double mzTolerancePpm = 10.0;
         public long maxBufferedPeaks = Hdf5BufferDefaults.DefaultMaxBufferedPeaks;
+        public int hdf5CompressionLevel = Hdf5BufferDefaults.DefaultHdf5CompressionLevel;
 
         public IEnumerable<int>? MS1scanNumbers;
         public List<int[]>? scanNumberRanges;
@@ -39,7 +41,6 @@ namespace Raxport
         public bool ifMergeScans = false;
         private IScanAveragePlus? averager;
 
-        private readonly List<Scan> MSnScansChunk = new();
         private readonly List<int> MSnScanNumbersChunk = new();
         private readonly List<IScanFilter> MSnScanFiltersChunk = new();
         private readonly List<IReaction> MSnScanReactionsChunk = new();
@@ -237,34 +238,39 @@ namespace Raxport
             return Math.Abs(observed - expected) <= MzToleranceDa(expected);
         }
 
-        public void WriteFT1Scan(int mScanNumber, Scan mScan, IScanFilter mFilter, double mRT)
+        private void WriteFT1Scan(int mScanNumber, IScanFilter mFilter, double mRT,
+            IReadOnlyList<Hdf5PeakRecord>? peaks = null,
+            Scan? mScan = null)
         {
             hdf5Writer!.AddScan(new Hdf5ScanRecord(
                 mScanNumber,
                 1,
                 mRT,
-                mScan.ScanStatistics.TIC,
+                mScan?.ScanStatistics.TIC ?? GetTic(mScanNumber),
                 mFilter.ToString(),
                 string.Empty,
                 0,
                 null,
-                CollectPeaks(mScan)));
+                peaks ?? (mScan is null ? CollectPeaks(mScanNumber) : CollectPeaks(mScan))));
         }
 
-        public void WriteFT2Scan(int mScanNumber, int mPrecusorScanNumber, IReaction mReaction, Scan mScan,
-            Scan mPrecursorScan, IScanFilter mFilter, double mRT)
+        private void WriteFT2Scan(int mScanNumber, int mPrecusorScanNumber, IReaction mReaction,
+            IScanFilter mFilter, double mRT, IReadOnlyList<Hdf5PeakRecord> parentPeaks)
         {
             int chargeStateInt = GetTrailerChargeState(mScanNumber);
-            List<Hdf5PeakRecord> parentPeaks = CollectPeaks(mPrecursorScan);
+            List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+                parentPeaks,
+                mReaction.PrecursorMass,
+                mReaction.IsolationWidth,
+                mzTolerancePpm);
             List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
                 parentPeaks,
                 mReaction.PrecursorMass,
                 mReaction.IsolationWidth,
                 mzTolerancePpm);
-            List<Hdf5PeakRecord> precursorPeaks = PrecursorSelector.FindPrecursorPeaks(
-                parentPeaks,
-                mReaction.PrecursorMass,
-                mReaction.IsolationWidth,
+            List<Hdf5PeakRecord> precursorPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+                evidencePeaks,
+                isotopeEvidencePeaks,
                 topNprecursor,
                 intensityTreshold,
                 mzTolerancePpm);
@@ -294,45 +300,49 @@ namespace Raxport
                 mScanNumber,
                 GetMsOrder(mFilter),
                 mRT,
-                mScan.ScanStatistics.TIC,
+                GetTic(mScanNumber),
                 mFilter.ToString(),
                 GetActivation(mFilter),
                 mPrecusorScanNumber,
                 reaction,
-                CollectPeaks(mScan)));
+                CollectPeaks(mScanNumber)));
         }
 
-        public void writeScansChunk(int leftPrecursorScanNumber, int rightPrecursorScanNumber,
+        private void writeScansChunk(int leftPrecursorScanNumber, int rightPrecursorScanNumber,
             Scan leftPrecursorScan, Scan rightPrecursorScan, IScanFilter rightFilter,
-            double leftPrecursorRT, double rightPrecursorRT)
+            double leftPrecursorRT, double rightPrecursorRT,
+            IReadOnlyList<Hdf5PeakRecord> leftPrecursorPeaks,
+            IReadOnlyList<Hdf5PeakRecord> rightPrecursorPeaks)
         {
             Scan currentPrecursorScan = rightPrecursorScan;
             int currentPrecursorScanNumber = rightPrecursorScanNumber;
+            IReadOnlyList<Hdf5PeakRecord> currentPrecursorPeaks = rightPrecursorPeaks;
             if (ifMergeScans)
             {
                 rightPrecursorRT = (leftPrecursorRT + rightPrecursorRT) / 2.0;
                 currentPrecursorScan = merge2Scans(leftPrecursorScanNumber, rightPrecursorScanNumber);
                 currentPrecursorScanNumber = rightPrecursorScanNumber;
+                currentPrecursorPeaks = CollectPeaks(currentPrecursorScan);
             }
-            WriteFT1Scan(currentPrecursorScanNumber, currentPrecursorScan, rightFilter, rightPrecursorRT);
-            for (int i = 0; i < MSnScansChunk.Count; i++)
+            WriteFT1Scan(currentPrecursorScanNumber, rightFilter, rightPrecursorRT, currentPrecursorPeaks, ifMergeScans ? currentPrecursorScan : null);
+            for (int i = 0; i < MSnScanNumbersChunk.Count; i++)
             {
                 if (!ifMergeScans)
                 {
                     if (Math.Abs(MSnScansRTsChunk[i] - leftPrecursorRT)
                     < Math.Abs(MSnScansRTsChunk[i] - rightPrecursorRT))
                     {
-                        currentPrecursorScan = leftPrecursorScan;
                         currentPrecursorScanNumber = leftPrecursorScanNumber;
+                        currentPrecursorPeaks = leftPrecursorPeaks;
                     }
                     else
                     {
-                        currentPrecursorScan = rightPrecursorScan;
                         currentPrecursorScanNumber = rightPrecursorScanNumber;
+                        currentPrecursorPeaks = rightPrecursorPeaks;
                     }
                 }
                 WriteFT2Scan(MSnScanNumbersChunk[i], currentPrecursorScanNumber, MSnScanReactionsChunk[i],
-                    MSnScansChunk[i], currentPrecursorScan, MSnScanFiltersChunk[i], MSnScansRTsChunk[i]);
+                    MSnScanFiltersChunk[i], MSnScansRTsChunk[i], currentPrecursorPeaks);
             }
         }
 
@@ -355,7 +365,8 @@ namespace Raxport
                 rawFileName!,
                 rawFile!.GetInstrumentData().Model,
                 raxportVersion,
-                maxBufferedPeaks);
+                maxBufferedPeaks,
+                hdf5CompressionLevel);
             hdf5Writer = writer;
 
             LogConversionStart(outputFile);
@@ -367,13 +378,18 @@ namespace Raxport
             IReaction currentReaction;
             Scan currentScan = new(), leftPrecursorScan = new(), rightPrecursorScan = new();
             double currentRT = 0, leftPrecursorRT = 0, rightPrecursorRT = 0;
+            IReadOnlyList<Hdf5PeakRecord> leftPrecursorPeaks = Array.Empty<Hdf5PeakRecord>();
+            IReadOnlyList<Hdf5PeakRecord> rightPrecursorPeaks = Array.Empty<Hdf5PeakRecord>();
             while (currentScanNumber <= lastScanNumber)
             {
                 currentRT = rawFile!.RetentionTimeFromScanNumber(currentScanNumber);
-                currentScan = Scan.FromFile(rawFile, currentScanNumber);
                 currentFilter = rawFile.GetFilterForScanNumber(currentScanNumber);
                 if (currentFilter.MSOrder == MSOrderType.Ms)
                 {
+                    if (ifMergeScans)
+                    {
+                        currentScan = Scan.FromFile(rawFile, currentScanNumber);
+                    }
                     parsedMS1Scans++;
                     precursorScanCount++;
                     if (precursorScanCount == 1)
@@ -383,8 +399,8 @@ namespace Raxport
                         leftPrecursorRT = currentRT;
                         if (!ifMergeScans)
                         {
-                            WriteFT1Scan(leftPrecursorScanNumber, leftPrecursorScan,
-                                currentFilter, leftPrecursorRT);
+                            leftPrecursorPeaks = CollectPeaks(currentScanNumber);
+                            WriteFT1Scan(leftPrecursorScanNumber, currentFilter, leftPrecursorRT, leftPrecursorPeaks);
                         }
                     }
                     else
@@ -392,13 +408,16 @@ namespace Raxport
                         rightPrecursorScanNumber = currentScanNumber;
                         rightPrecursorScan = currentScan;
                         rightPrecursorRT = currentRT;
+                        rightPrecursorPeaks = ifMergeScans ? Array.Empty<Hdf5PeakRecord>() : CollectPeaks(currentScanNumber);
                         writeScansChunk(leftPrecursorScanNumber, rightPrecursorScanNumber,
                             leftPrecursorScan, rightPrecursorScan, currentFilter,
-                            leftPrecursorRT, rightPrecursorRT);
+                            leftPrecursorRT, rightPrecursorRT,
+                            leftPrecursorPeaks, rightPrecursorPeaks);
                         ClearMSnChunk();
                         leftPrecursorScanNumber = currentScanNumber;
                         leftPrecursorScan = currentScan;
                         leftPrecursorRT = currentRT;
+                        leftPrecursorPeaks = rightPrecursorPeaks;
                     }
                 }
                 else
@@ -406,7 +425,6 @@ namespace Raxport
                     parsedMSnScans++;
                     currentEvent = rawFile.GetScanEventForScanNumber(currentScanNumber);
                     currentReaction = currentEvent.GetReaction(0);
-                    MSnScansChunk.Add(currentScan);
                     MSnScanNumbersChunk.Add(currentScanNumber);
                     MSnScanFiltersChunk.Add(currentFilter);
                     MSnScanReactionsChunk.Add(currentReaction);
@@ -415,11 +433,16 @@ namespace Raxport
                 currentScanNumber++;
             }
 
-            for (int i = 0; i < MSnScansChunk.Count; i++)
+            if (MSnScanNumbersChunk.Count > 0)
             {
-                WriteFT2Scan(MSnScanNumbersChunk[i], rightPrecursorScanNumber, MSnScanReactionsChunk[i],
-                             MSnScansChunk[i], rightPrecursorScan,
-                             MSnScanFiltersChunk[i], MSnScansRTsChunk[i]);
+                IReadOnlyList<Hdf5PeakRecord> trailingPrecursorPeaks = ifMergeScans
+                    ? CollectPeaks(rightPrecursorScan)
+                    : rightPrecursorPeaks;
+                for (int i = 0; i < MSnScanNumbersChunk.Count; i++)
+                {
+                    WriteFT2Scan(MSnScanNumbersChunk[i], rightPrecursorScanNumber, MSnScanReactionsChunk[i],
+                                 MSnScanFiltersChunk[i], MSnScansRTsChunk[i], trailingPrecursorPeaks);
+                }
             }
             hdf5Writer = null;
             writer.Dispose();
@@ -433,36 +456,63 @@ namespace Raxport
             Write();
         }
 
+        private List<Hdf5PeakRecord> CollectPeaks(int scanNumber)
+        {
+            CentroidStream? centroidStream = rawFile!.GetCentroidStream(scanNumber, false);
+            if (centroidStream is not null && centroidStream.Length > 0)
+            {
+                return CollectPeaks(centroidStream);
+            }
+
+            SegmentedScan segmentedScan = rawFile.GetSegmentedScanFromScanNumber(scanNumber);
+            return CollectPeaks(segmentedScan);
+        }
+
         private static List<Hdf5PeakRecord> CollectPeaks(Scan mScan)
         {
-            List<Hdf5PeakRecord> peaks = new();
-            if (mScan.HasCentroidStream)
+            return mScan.HasCentroidStream
+                ? CollectPeaks(mScan.CentroidScan)
+                : CollectPeaks(mScan.SegmentedScan);
+        }
+
+        private static List<Hdf5PeakRecord> CollectPeaks(CentroidStream centroidStream)
+        {
+            LabelPeak[] labelPeaks = centroidStream.GetLabelPeaks();
+            List<Hdf5PeakRecord> peaks = new(labelPeaks.Length);
+            foreach (LabelPeak peak in labelPeaks)
             {
-                foreach (LabelPeak peak in mScan.CentroidScan.GetLabelPeaks())
-                {
-                    peaks.Add(new Hdf5PeakRecord(
-                        peak.Mass,
-                        peak.Intensity,
-                        peak.Resolution,
-                        peak.Baseline,
-                        peak.SignalToNoise,
-                        (int)peak.Charge));
-                }
-            }
-            else
-            {
-                for (int i = 0; i < mScan.SegmentedScan.Positions.Length; i++)
-                {
-                    peaks.Add(new Hdf5PeakRecord(
-                        mScan.SegmentedScan.Positions[i],
-                        mScan.SegmentedScan.Intensities[i],
-                        0,
-                        0,
-                        0,
-                        0));
-                }
+                peaks.Add(new Hdf5PeakRecord(
+                    peak.Mass,
+                    peak.Intensity,
+                    peak.Resolution,
+                    peak.Baseline,
+                    peak.SignalToNoise,
+                    (int)peak.Charge));
             }
             return peaks;
+        }
+
+        private static List<Hdf5PeakRecord> CollectPeaks(SegmentedScan segmentedScan)
+        {
+            double[] positions = segmentedScan.Positions;
+            double[] intensities = segmentedScan.Intensities;
+            List<Hdf5PeakRecord> peaks = new(positions.Length);
+            for (int i = 0; i < positions.Length; i++)
+            {
+                peaks.Add(new Hdf5PeakRecord(
+                    positions[i],
+                    intensities[i],
+                    0,
+                    0,
+                    0,
+                    0));
+            }
+            return peaks;
+        }
+
+        private double GetTic(int scanNumber)
+        {
+            return rawFile!.GetScanStatsForScanNumber(scanNumber).TIC;
         }
 
         private int GetTrailerChargeState(int scanNumber)
@@ -508,7 +558,6 @@ namespace Raxport
 
         private void ClearMSnChunk()
         {
-            MSnScansChunk.Clear();
             MSnScanNumbersChunk.Clear();
             MSnScanFiltersChunk.Clear();
             MSnScanReactionsChunk.Clear();
@@ -525,6 +574,7 @@ namespace Raxport
             Console.WriteLine($"Output HDF5 file    : {outputFile}");
             Console.WriteLine($"Scan range          : {firstScanNumber} - {lastScanNumber} ({lastScanNumber - firstScanNumber + 1:N0} scans)");
             Console.WriteLine($"Peak flush limit    : {maxBufferedPeaks:N0} peaks");
+            Console.WriteLine($"HDF5 compression    : gzip level {hdf5CompressionLevel:N0}");
             Console.WriteLine($"Merge adjacent MS1  : {ifMergeScans}");
             Console.WriteLine($"Top precursor count : {topNprecursor:N0}");
             Console.WriteLine($"m/z tolerance       : {mzTolerancePpm:0.###} ppm");
@@ -583,6 +633,7 @@ namespace Raxport
         private static int threads = 6;
         private static int peakFlushUnits = Hdf5BufferDefaults.DefaultPeakFlushUnits;
         private static long maxBufferedPeaks = Hdf5BufferDefaults.DefaultMaxBufferedPeaks;
+        private static int hdf5CompressionLevel = Hdf5BufferDefaults.DefaultHdf5CompressionLevel;
         private static bool ifMergeScans = false;
         private static int topN = 15;
         private static double mzTolerancePpm = 10.0;
@@ -611,6 +662,7 @@ namespace Raxport
                 "  -o PATH                 Output directory. Default: input/current directory.\n" +
                 "  -j N                    Maximum child Raxport processes for multiple files. Default: 6.\n" +
                 "  -p N                    Peak flush units; one unit is 10,000,000 peak rows. Default: 2.\n" +
+                "  --hdf5-compression-level N  HDF5 gzip compression level 0-9. 0 disables compression; default: 1.\n" +
                 "  -n N                    Maximum precursor candidates stored for each MSn scan. Default: 15.\n" +
                 "  --mz-tolerance-ppm PPM  Precursor m/z matching tolerance. Default: 10.\n" +
                 "  -m                      Merge adjacent MS1 scans.\n" +
@@ -648,6 +700,14 @@ namespace Raxport
                     {
                         peakFlushUnits = parsedPeakFlushUnits;
                         maxBufferedPeaks = peakFlushUnits * Hdf5BufferDefaults.PeaksPerFlushUnit;
+                    }
+                }
+                else if (args[i] == "--hdf5-compression-level")
+                {
+                    if (int.TryParse(args[++i], out int parsedCompressionLevel) &&
+                        parsedCompressionLevel >= 0 && parsedCompressionLevel <= 9)
+                    {
+                        hdf5CompressionLevel = parsedCompressionLevel;
                     }
                 }
                 else if (args[i] == "-m")
@@ -730,7 +790,7 @@ namespace Raxport
         {
             if (IsBrukerInput(file))
             {
-                BrukerHdf5Converter brukerWriter = new(file, outPath, topN, mzTolerancePpm, maxBufferedPeaks);
+                BrukerHdf5Converter brukerWriter = new(file, outPath, topN, mzTolerancePpm, maxBufferedPeaks, hdf5CompressionLevel);
                 brukerWriter.Write();
                 return;
             }
@@ -739,6 +799,7 @@ namespace Raxport
             writer.ifMergeScans = ifMergeScans;
             writer.topNprecursor = topN;
             writer.maxBufferedPeaks = maxBufferedPeaks;
+            writer.hdf5CompressionLevel = hdf5CompressionLevel;
             writer.mzTolerancePpm = mzTolerancePpm;
             writer.Write();
         }
@@ -794,6 +855,8 @@ namespace Raxport
             startInfo.ArgumentList.Add(topN.ToString(CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add("--mz-tolerance-ppm");
             startInfo.ArgumentList.Add(mzTolerancePpm.ToString("R", CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add("--hdf5-compression-level");
+            startInfo.ArgumentList.Add(hdf5CompressionLevel.ToString(CultureInfo.InvariantCulture));
             if (ifMergeScans)
             {
                 startInfo.ArgumentList.Add("-m");

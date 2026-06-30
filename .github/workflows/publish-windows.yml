@@ -2,9 +2,9 @@ name: publish-windows
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, dev ]
   release:
     types: [ created ]
   workflow_dispatch:
@@ -39,12 +39,15 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
           .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
-      - name: Install HDF5
+      - name: Install native libraries
         shell: pwsh
         run: |
           .\vcpkg\vcpkg.exe install hdf5:x64-windows-static
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\vcpkg\vcpkg.exe install sqlite3:x64-windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem .\vcpkg\installed\x64-windows-static\lib | Select-Object -ExpandProperty Name
+          Get-ChildItem .\vcpkg\installed\x64-windows\bin | Select-Object -ExpandProperty Name
 
       - name: Publish
         shell: pwsh
