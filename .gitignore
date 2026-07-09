@@ -16,7 +16,7 @@
 *.sln.docstates
 
 # Test output
-/TestResults/
+**/TestResults/
 /test/*
 !/test/*.md
 !/test/*.cs

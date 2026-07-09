@@ -4,7 +4,7 @@
 
 ### .NET version of Raxport
 
-Raxport is a simple program which extracts scans from ThermoFisher RAW files and Bruker `.d`/`.d.zip` data. It supports Thermo Orbitrap/IonTrap scans plus Bruker TSF AutoMSMS, TDF PASEF DDA, and TDF DIA inputs, and writes one HDF5 `.h5` file per input. The HDF5 output stores scan metadata, peak arrays, precursor reaction metadata, precursor candidates, and shared string tables in column-oriented datasets.
+Raxport is a simple program which extracts scans from ThermoFisher RAW files and Bruker `.d`/`.d.zip` data. It supports Thermo Orbitrap/IonTrap scans plus Bruker TSF AutoMSMS, TDF PASEF DDA, and TDF DIA inputs, and writes one HDF5 `.h5` file per input by default, or one indexed mzML `.mzML` file per input with `--format mzml`. The HDF5 output stores scan metadata, peak arrays, precursor reaction metadata, precursor candidates, and shared string tables in column-oriented datasets.
 
 ### Run prebuilt binaries
 
@@ -68,6 +68,9 @@ Examples:
 # Convert one RAW file.
 ./Raxport-linux-x64 -f 'file.raw' -o 'output path' -p 2
 
+# Convert one RAW file to indexed mzML.
+./Raxport-linux-x64 -f 'file.raw' -o 'output path' --format mzml
+
 # Convert one Bruker directory or archive.
 ./Raxport-linux-x64 -f 'sample.d' -o 'output path' -p 2
 ./Raxport-linux-x64 -f 'sample.d.zip' -o 'output path' -p 2
@@ -79,16 +82,17 @@ Options:
 | --- | --- | --- |
 | `-i PATH` | current directory | Input directory containing `.raw`, `.d`, or `.d.zip` inputs. |
 | `-f FILE` | unset | Convert one RAW file, Bruker `.d` directory, or Bruker `.d.zip` archive instead of scanning the input directory. |
-| `-o PATH` | input/current directory | Output directory for generated `.h5` files. |
+| `-o PATH` | input/current directory | Output directory for generated output files. |
 | `-j N` | `6` | Maximum child Raxport processes when converting multiple RAW files. |
 | `-p N` | `2` | HDF5 peak flush units. One unit is 10,000,000 peak rows, so `-p 2` flushes at about 20,000,000 buffered peak rows. |
 | `--hdf5-compression-level N` | `1` | HDF5 gzip compression level 0-9. `0` disables compression, lower levels write faster, and `6` preserves the earlier smaller-output behavior. |
+| `--format FORMAT` | `hdf5` | Output format: `hdf5`/`h5` or indexed `mzml`/`indexed-mzml`. |
 | `-n N` | `15` | Maximum precursor candidates stored for each MSn scan. |
 | `--mz-tolerance-ppm PPM` | `10` | Precursor m/z matching tolerance in ppm. |
 | `-m` | off | Merge adjacent MS1 scans. |
 | `-h` | off | Print command help and exit. |
 
-Each input produces one `.h5` output file. Bruker archive names strip `.zip` and `.d`, so `sample.d.zip` produces `sample.h5`.
+Each input produces one `.h5` output file by default. With `--format mzml`, each input produces one indexed `.mzML` file. Bruker archive names strip `.zip` and `.d`, so `sample.d.zip` produces `sample.h5` by default or `sample.mzML` with mzML output.
 
 ### Generated HDF5 file structure
 

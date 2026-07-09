@@ -5,31 +5,32 @@ using System.Runtime.InteropServices;
 
 namespace Raxport;
 
-internal sealed class BrukerHdf5Converter
+internal sealed class BrukerRawFileConverter
 {
-    private const string RaxportVersion = "6.0";
     private readonly string inputPath;
     private readonly string outPath;
     private readonly int topNprecursor;
     private readonly double mzTolerancePpm;
     private readonly long maxBufferedPeaks;
-    private readonly int hdf5CompressionLevel;
+    private readonly int writerCompressionLevel;
+    private readonly RaxportOutputFormat outputFormat;
     private readonly double intensityThreshold;
     private readonly Dictionary<long, BrukerFrame> frames = new();
-    private readonly Dictionary<long, IReadOnlyList<Hdf5PeakRecord>> parentPeaksByFrame = new();
+    private readonly Dictionary<long, IReadOnlyList<RaxportPeakRecord>> parentPeaksByFrame = new();
     private readonly Dictionary<long, IReadOnlyList<double>> parentOneOverK0ByFrame = new();
     private readonly Dictionary<long, int> tdfParentUseCounts = new();
     private readonly List<BrukerFrame> ms1Frames = new();
     private long tdfMs1CentroidsWithoutTrace;
     private string? tempDirectory;
 
-    public BrukerHdf5Converter(
+    public BrukerRawFileConverter(
         string inputPath,
         string outPath,
         int topNprecursor,
         double mzTolerancePpm,
         long maxBufferedPeaks,
-        int hdf5CompressionLevel = Hdf5BufferDefaults.DefaultHdf5CompressionLevel,
+        int writerCompressionLevel,
+        RaxportOutputFormat outputFormat,
         double intensityThreshold = 0.99)
     {
         this.inputPath = inputPath;
@@ -37,7 +38,8 @@ internal sealed class BrukerHdf5Converter
         this.topNprecursor = topNprecursor;
         this.mzTolerancePpm = mzTolerancePpm;
         this.maxBufferedPeaks = maxBufferedPeaks;
-        this.hdf5CompressionLevel = hdf5CompressionLevel;
+        this.writerCompressionLevel = writerCompressionLevel;
+        this.outputFormat = outputFormat;
         this.intensityThreshold = intensityThreshold;
     }
 
@@ -57,7 +59,7 @@ internal sealed class BrukerHdf5Converter
             prepareTimer.Stop();
             inputPrepareElapsed = prepareTimer.Elapsed;
 
-            string outputFile = Path.Combine(outPath, GetOutputBaseName(inputPath) + ".h5");
+            string outputFile = Path.Combine(outPath, GetOutputBaseName(inputPath) + RaxportWriterFactory.GetOutputExtension(outputFormat));
             string? tsfPath = Path.Combine(analysisDirectory, "analysis.tsf");
             string? tdfPath = Path.Combine(analysisDirectory, "analysis.tdf");
             if (File.Exists(tsfPath))
@@ -99,7 +101,7 @@ internal sealed class BrukerHdf5Converter
         int ms2RowsWritten = 0;
 
         using BrukerTsfReader reader = new(analysisDirectory);
-        using Hdf5BufferedWriter writer = CreateWriter(outputFile, instrumentModel);
+        using IRaxportWriter writer = RaxportWriterFactory.Create(outputFile, inputPath, instrumentModel, outputFormat, maxBufferedPeaks, writerCompressionLevel);
         LogConversionStart(outputFile, "TSF AutoMSMS", frames.Count, ms1RowsPlanned, ms2RowsPlanned, precursorRowsPlanned);
 
         foreach (BrukerFrame frame in frames.Values.OrderBy(frame => frame.Id))
@@ -109,7 +111,7 @@ internal sealed class BrukerHdf5Converter
                 continue;
             }
 
-            List<Hdf5PeakRecord> peaks = reader.ReadLineSpectrum(frame.Id);
+            List<RaxportPeakRecord> peaks = reader.ReadLineSpectrum(frame.Id);
             parentPeaksByFrame[frame.Id] = peaks;
             ms1Frames.Add(frame);
             writer.AddScan(CreateMs1Scan(frame, peaks));
@@ -120,25 +122,25 @@ internal sealed class BrukerHdf5Converter
         foreach (TsfMsMsInfo ms2 in ms2Rows)
         {
             BrukerFrame frame = frames[ms2.FrameId];
-            IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetParentPeaks(ms2.ParentFrameId);
-            List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+            IReadOnlyList<RaxportPeakRecord> parentPeaks = GetParentPeaks(ms2.ParentFrameId);
+            List<RaxportPeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
                 parentPeaks,
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
                 mzTolerancePpm);
-            List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
+            List<RaxportPeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
                 parentPeaks,
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
                 mzTolerancePpm);
-            List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+            List<RaxportPeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
                 evidencePeaks,
                 isotopeEvidencePeaks,
                 topNprecursor,
                 intensityThreshold,
                 mzTolerancePpm,
                 preferredCharge: ms2.PrecursorCharge ?? 0);
-            Hdf5ReactionRecord reaction = CreateReaction(
+            RaxportReactionRecord reaction = CreateReaction(
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
                 ms2.PrecursorCharge ?? 0,
@@ -146,7 +148,7 @@ internal sealed class BrukerHdf5Converter
                 "CID",
                 selectedPeaks,
                 isotopeEvidencePeaks);
-            writer.AddScan(new Hdf5ScanRecord(
+            writer.AddScan(new RaxportScanRecord(
                 checked((int)syntheticScanNumber++),
                 2,
                 frame.TimeSeconds / 60.0,
@@ -185,7 +187,7 @@ internal sealed class BrukerHdf5Converter
         int ms2RowsWritten = 0;
 
         using BrukerTimsReader reader = new(analysisDirectory);
-        using Hdf5BufferedWriter writer = CreateWriter(outputFile, instrumentModel);
+        using IRaxportWriter writer = RaxportWriterFactory.Create(outputFile, inputPath, instrumentModel, outputFormat, maxBufferedPeaks, writerCompressionLevel);
         LogConversionStart(outputFile, "TDF", frames.Count, ms1RowsPlanned, ms2RowsPlanned, precursorRowsPlanned);
 
         InitializeTdfParentUseCounts(pasefRows, diaRows);
@@ -201,7 +203,7 @@ internal sealed class BrukerHdf5Converter
         {
             if (frame.MsMsType == 0)
             {
-                IReadOnlyList<Hdf5PeakRecord> peaks = EnsureTdfMs1Peaks(reader, frame);
+                IReadOnlyList<RaxportPeakRecord> peaks = EnsureTdfMs1Peaks(reader, frame);
                 writer.AddScan(CreateMs1Scan(frame, peaks));
                 ms1RowsWritten++;
                 ReleaseTdfParentPeaksIfUnused(frame.Id);
@@ -237,14 +239,9 @@ internal sealed class BrukerHdf5Converter
         LogConversionFinished(writer, "TDF", ms1RowsWritten, ms2RowsWritten, totalTimer.Elapsed, inputPrepareElapsed);
     }
 
-    private Hdf5BufferedWriter CreateWriter(string outputFile, string instrumentModel)
+    private static RaxportScanRecord CreateMs1Scan(BrukerFrame frame, IReadOnlyList<RaxportPeakRecord> peaks)
     {
-        return new Hdf5BufferedWriter(outputFile, inputPath, instrumentModel, RaxportVersion, maxBufferedPeaks, hdf5CompressionLevel);
-    }
-
-    private static Hdf5ScanRecord CreateMs1Scan(BrukerFrame frame, IReadOnlyList<Hdf5PeakRecord> peaks)
-    {
-        return new Hdf5ScanRecord(
+        return new RaxportScanRecord(
             checked((int)frame.Id),
             1,
             frame.TimeSeconds / 60.0,
@@ -258,14 +255,14 @@ internal sealed class BrukerHdf5Converter
 
     private long WritePasefScan(
         BrukerTimsReader reader,
-        Hdf5BufferedWriter writer,
+        IRaxportWriter writer,
         PasefMsMsInfo ms2,
         long syntheticScanNumber)
     {
         (double oneOverK0Begin, double oneOverK0End) = reader.ScanRangeToOneOverK0Range(ms2.FragmentFrameId, ms2.ScanBegin, ms2.ScanEnd);
-        IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetTdfParentPeaks(reader, ms2.ParentFrameId);
+        IReadOnlyList<RaxportPeakRecord> parentPeaks = GetTdfParentPeaks(reader, ms2.ParentFrameId);
         IReadOnlyList<double> parentOneOverK0Axis = GetTdfParentOneOverK0Axis(reader, ms2.ParentFrameId);
-        List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+        List<RaxportPeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -273,7 +270,7 @@ internal sealed class BrukerHdf5Converter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
+        List<RaxportPeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -281,14 +278,14 @@ internal sealed class BrukerHdf5Converter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+        List<RaxportPeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
             evidencePeaks,
             isotopeEvidencePeaks,
             topNprecursor,
             intensityThreshold,
             mzTolerancePpm,
             preferredCharge: ms2.Charge ?? 0);
-        Hdf5ReactionRecord reaction = CreateReaction(
+        RaxportReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
             ms2.IsolationWidth,
             ms2.Charge ?? 0,
@@ -298,8 +295,8 @@ internal sealed class BrukerHdf5Converter
             isotopeEvidencePeaks,
             oneOverK0Begin,
             oneOverK0End);
-        List<Hdf5PeakRecord> fragmentPeaks = reader.ReadPasefMsMs(ms2.PrecursorId);
-        writer.AddScan(new Hdf5ScanRecord(
+        List<RaxportPeakRecord> fragmentPeaks = reader.ReadPasefMsMs(ms2.PrecursorId);
+        writer.AddScan(new RaxportScanRecord(
             checked((int)syntheticScanNumber),
             2,
             ms2.FragmentTimeSeconds / 60.0,
@@ -316,16 +313,16 @@ internal sealed class BrukerHdf5Converter
 
     private long WriteDiaScan(
         BrukerTimsReader reader,
-        Hdf5BufferedWriter writer,
+        IRaxportWriter writer,
         DiaMsMsInfo ms2,
         long syntheticScanNumber)
     {
         BrukerFrame frame = frames[ms2.FrameId];
         long? parentFrameId = FindNearestMs1Frame(frame.TimeSeconds);
         (double oneOverK0Begin, double oneOverK0End) = reader.ScanRangeToOneOverK0Range(ms2.FrameId, ms2.ScanBegin, ms2.ScanEnd);
-        IReadOnlyList<Hdf5PeakRecord> parentPeaks = GetTdfParentPeaks(reader, parentFrameId);
+        IReadOnlyList<RaxportPeakRecord> parentPeaks = GetTdfParentPeaks(reader, parentFrameId);
         IReadOnlyList<double> parentOneOverK0Axis = GetTdfParentOneOverK0Axis(reader, parentFrameId);
-        List<Hdf5PeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
+        List<RaxportPeakRecord> evidencePeaks = PrecursorSelector.GetPrecursorEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -333,7 +330,7 @@ internal sealed class BrukerHdf5Converter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<Hdf5PeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
+        List<RaxportPeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
             ms2.IsolationWidth,
@@ -341,14 +338,14 @@ internal sealed class BrukerHdf5Converter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<Hdf5PeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+        List<RaxportPeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
             evidencePeaks,
             isotopeEvidencePeaks,
             topNprecursor,
             intensityThreshold,
             mzTolerancePpm,
             preferredCharge: 0);
-        Hdf5ReactionRecord reaction = CreateReaction(
+        RaxportReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
             ms2.IsolationWidth,
             0,
@@ -358,7 +355,7 @@ internal sealed class BrukerHdf5Converter
             isotopeEvidencePeaks,
             oneOverK0Begin,
             oneOverK0End);
-        writer.AddScan(new Hdf5ScanRecord(
+        writer.AddScan(new RaxportScanRecord(
             checked((int)syntheticScanNumber),
             2,
             frame.TimeSeconds / 60.0,
@@ -372,18 +369,18 @@ internal sealed class BrukerHdf5Converter
         return syntheticScanNumber + 1;
     }
 
-    private Hdf5ReactionRecord CreateReaction(
+    private RaxportReactionRecord CreateReaction(
         double precursorMass,
         double isolationWidth,
         int chargeState,
         double collisionEnergy,
         string activation,
-        IReadOnlyList<Hdf5PeakRecord> precursorPeaks,
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        IReadOnlyList<RaxportPeakRecord> precursorPeaks,
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
         double oneOverK0Begin = 0,
         double oneOverK0End = 0)
     {
-        return new Hdf5ReactionRecord(
+        return new RaxportReactionRecord(
             precursorMass,
             isolationWidth,
             chargeState,
@@ -407,34 +404,34 @@ internal sealed class BrukerHdf5Converter
             oneOverK0End);
     }
 
-    private IReadOnlyList<Hdf5PeakRecord> GetParentPeaks(long? parentFrameId)
+    private IReadOnlyList<RaxportPeakRecord> GetParentPeaks(long? parentFrameId)
     {
-        if (parentFrameId is null || !parentPeaksByFrame.TryGetValue(parentFrameId.Value, out IReadOnlyList<Hdf5PeakRecord>? peaks))
+        if (parentFrameId is null || !parentPeaksByFrame.TryGetValue(parentFrameId.Value, out IReadOnlyList<RaxportPeakRecord>? peaks))
         {
-            return Array.Empty<Hdf5PeakRecord>();
+            return Array.Empty<RaxportPeakRecord>();
         }
 
         return peaks;
     }
 
-    private IReadOnlyList<Hdf5PeakRecord> GetTdfParentPeaks(BrukerTimsReader reader, long? parentFrameId)
+    private IReadOnlyList<RaxportPeakRecord> GetTdfParentPeaks(BrukerTimsReader reader, long? parentFrameId)
     {
         if (parentFrameId is null || !frames.TryGetValue(parentFrameId.Value, out BrukerFrame? frame))
         {
-            return Array.Empty<Hdf5PeakRecord>();
+            return Array.Empty<RaxportPeakRecord>();
         }
 
         return EnsureTdfMs1Peaks(reader, frame);
     }
 
-    private IReadOnlyList<Hdf5PeakRecord> EnsureTdfMs1Peaks(BrukerTimsReader reader, BrukerFrame frame)
+    private IReadOnlyList<RaxportPeakRecord> EnsureTdfMs1Peaks(BrukerTimsReader reader, BrukerFrame frame)
     {
-        if (parentPeaksByFrame.TryGetValue(frame.Id, out IReadOnlyList<Hdf5PeakRecord>? peaks))
+        if (parentPeaksByFrame.TryGetValue(frame.Id, out IReadOnlyList<RaxportPeakRecord>? peaks))
         {
             return peaks;
         }
 
-        List<Hdf5PeakRecord> readPeaks = reader.ReadMs1FrameWithMobilityTraces(
+        List<RaxportPeakRecord> readPeaks = reader.ReadMs1FrameWithMobilityTraces(
             frame.Id,
             frame.NumScans,
             mzTolerancePpm,
@@ -748,32 +745,35 @@ internal sealed class BrukerHdf5Converter
     {
         Console.WriteLine();
         Console.WriteLine("============================================================");
-        Console.WriteLine("Raxport Bruker HDF5 conversion started");
+        Console.WriteLine($"Raxport Bruker {RaxportWriterFactory.GetOutputFormatLabel(outputFormat)} conversion started");
         Console.WriteLine("------------------------------------------------------------");
         Console.WriteLine($"Input Bruker data   : {inputPath}");
-        Console.WriteLine($"Output HDF5 file    : {outputFile}");
+        Console.WriteLine($"Output {RaxportWriterFactory.GetOutputFormatLabel(outputFormat)} file : {outputFile}");
         Console.WriteLine($"Bruker format       : {format}");
         Console.WriteLine($"Frame rows          : {frameCount:N0}");
         Console.WriteLine($"MS1 rows planned    : {ms1Count:N0}");
         Console.WriteLine($"MS2 rows planned    : {ms2Count:N0}");
         Console.WriteLine($"Precursors planned  : {precursorCount:N0}");
-        Console.WriteLine($"Peak flush limit    : {maxBufferedPeaks:N0} peaks");
-        Console.WriteLine($"HDF5 compression    : gzip level {hdf5CompressionLevel:N0}");
+        if (RaxportWriterFactory.UsesPeakBufferTuning(outputFormat))
+        {
+            Console.WriteLine($"Peak flush limit    : {maxBufferedPeaks:N0} peaks");
+            Console.WriteLine($"Writer compression  : gzip level {writerCompressionLevel:N0}");
+        }
         Console.WriteLine($"Top precursor count : {topNprecursor:N0}");
         Console.WriteLine($"m/z tolerance       : {mzTolerancePpm:0.###} ppm");
         Console.WriteLine("============================================================");
     }
 
-    private static void LogConversionFinished(
-        Hdf5BufferedWriter writer,
+    private void LogConversionFinished(
+        IRaxportWriter writer,
         string format,
         int ms1RowsWritten,
         int ms2RowsWritten,
         TimeSpan totalElapsed,
         TimeSpan inputPrepareElapsed)
     {
-        TimeSpan hdfElapsed = writer.HdfWriteElapsed;
-        TimeSpan readAndRamElapsed = totalElapsed - inputPrepareElapsed - hdfElapsed;
+        TimeSpan writeElapsed = writer.WriteElapsed;
+        TimeSpan readAndRamElapsed = totalElapsed - inputPrepareElapsed - writeElapsed;
         if (readAndRamElapsed < TimeSpan.Zero)
         {
             readAndRamElapsed = TimeSpan.Zero;
@@ -781,20 +781,20 @@ internal sealed class BrukerHdf5Converter
 
         Console.WriteLine();
         Console.WriteLine("============================================================");
-        Console.WriteLine("Raxport Bruker HDF5 conversion finished");
+        Console.WriteLine($"Raxport Bruker {RaxportWriterFactory.GetOutputFormatLabel(outputFormat)} conversion finished");
         Console.WriteLine("------------------------------------------------------------");
         Console.WriteLine($"Bruker format               : {format}");
-        Console.WriteLine($"HDF5 scan rows written      : {writer.TotalScans:N0}");
-        Console.WriteLine($"HDF5 MS1 scan rows written  : {ms1RowsWritten:N0}");
-        Console.WriteLine($"HDF5 MS2 scan rows written  : {ms2RowsWritten:N0}");
-        Console.WriteLine($"HDF5 peak rows written      : {writer.TotalPeaks:N0}");
-        Console.WriteLine($"HDF5 reaction rows written  : {writer.TotalReactions:N0}");
-        Console.WriteLine($"HDF5 precursor candidates   : {writer.TotalCandidates:N0}");
-        Console.WriteLine($"HDF5 flush count            : {writer.FlushCount:N0}");
+        Console.WriteLine($"Output scan rows written    : {writer.TotalScans:N0}");
+        Console.WriteLine($"Output MS1 scan rows written: {ms1RowsWritten:N0}");
+        Console.WriteLine($"Output MS2 scan rows written: {ms2RowsWritten:N0}");
+        Console.WriteLine($"Output peak rows written    : {writer.TotalPeaks:N0}");
+        Console.WriteLine($"Output reaction rows written: {writer.TotalReactions:N0}");
+        Console.WriteLine($"Output precursor candidates : {writer.TotalCandidates:N0}");
+        Console.WriteLine($"Output flush count          : {writer.FlushCount:N0}");
         Console.WriteLine("------------------------------------------------------------");
         Console.WriteLine($"Input prepare               : {FormatElapsed(inputPrepareElapsed)} ({Percent(inputPrepareElapsed, totalElapsed):0.0}%)");
         Console.WriteLine($"Bruker read + RAM buffering : {FormatElapsed(readAndRamElapsed)} ({Percent(readAndRamElapsed, totalElapsed):0.0}%)");
-        Console.WriteLine($"HDF5 create/flush/close     : {FormatElapsed(hdfElapsed)} ({Percent(hdfElapsed, totalElapsed):0.0}%)");
+        Console.WriteLine($"Output create/flush/close   : {FormatElapsed(writeElapsed)} ({Percent(writeElapsed, totalElapsed):0.0}%)");
         Console.WriteLine($"Total elapsed               : {FormatElapsed(totalElapsed)}");
         Console.WriteLine("============================================================");
     }
@@ -867,7 +867,7 @@ internal sealed class BrukerTsfReader : IDisposable
         }
     }
 
-    public List<Hdf5PeakRecord> ReadLineSpectrum(long frameId)
+    public List<RaxportPeakRecord> ReadLineSpectrum(long frameId)
     {
         double[] indices;
         float[] intensities;
@@ -898,10 +898,10 @@ internal sealed class BrukerTsfReader : IDisposable
             throw new InvalidOperationException($"Unable to convert TSF indices to m/z for spectrum {frameId}: {BrukerNative.GetTsfLastError()}");
         }
 
-        List<Hdf5PeakRecord> peaks = new(requiredLength);
+        List<RaxportPeakRecord> peaks = new(requiredLength);
         for (int i = 0; i < requiredLength; i++)
         {
-            peaks.Add(new Hdf5PeakRecord(mz[i], intensities[i], 0, 0, 0, 0));
+            peaks.Add(new RaxportPeakRecord(mz[i], intensities[i], 0, 0, 0, 0));
         }
 
         return peaks.OrderBy(peak => peak.Mz).ToList();
@@ -921,7 +921,7 @@ internal sealed class BrukerTimsReader : IDisposable
 {
     private const int InitialScanBufferUInt32Length = 4096;
     private readonly BrukerNative.MsMsSpectrumCallback spectrumCallback;
-    private readonly Dictionary<long, List<Hdf5PeakRecord>> pasefCache = new();
+    private readonly Dictionary<long, List<RaxportPeakRecord>> pasefCache = new();
     private int scanBufferUInt32Length = InitialScanBufferUInt32Length;
     private ulong handle;
 
@@ -936,9 +936,9 @@ internal sealed class BrukerTimsReader : IDisposable
         spectrumCallback = OnSpectrum;
     }
 
-    public List<Hdf5PeakRecord> ExtractCentroidedFrame(long frameId, uint scanBegin, uint scanEnd)
+    public List<RaxportPeakRecord> ExtractCentroidedFrame(long frameId, uint scanBegin, uint scanEnd)
     {
-        List<Hdf5PeakRecord>? result = null;
+        List<RaxportPeakRecord>? result = null;
         void Callback(long id, uint numPeaks, IntPtr mzValues, IntPtr areaValues, IntPtr userData)
         {
             _ = id;
@@ -953,12 +953,12 @@ internal sealed class BrukerTimsReader : IDisposable
             throw new InvalidOperationException($"Unable to extract TDF frame {frameId}: {BrukerNative.GetTimsLastError()}");
         }
 
-        return result ?? new List<Hdf5PeakRecord>();
+        return result ?? new List<RaxportPeakRecord>();
     }
 
-    public List<Hdf5PeakRecord> ReadMs1FrameWithMobilityTraces(long frameId, int numScans, double mzTolerancePpm, out int omittedCentroids)
+    public List<RaxportPeakRecord> ReadMs1FrameWithMobilityTraces(long frameId, int numScans, double mzTolerancePpm, out int omittedCentroids)
     {
-        List<Hdf5PeakRecord> centroids = ExtractCentroidedFrame(frameId, 0, checked((uint)numScans));
+        List<RaxportPeakRecord> centroids = ExtractCentroidedFrame(frameId, 0, checked((uint)numScans));
         omittedCentroids = 0;
         if (centroids.Count == 0 || numScans <= 0)
         {
@@ -1050,14 +1050,14 @@ internal sealed class BrukerTimsReader : IDisposable
         }
     }
 
-    public List<Hdf5PeakRecord> ReadPasefMsMs(long precursorId)
+    public List<RaxportPeakRecord> ReadPasefMsMs(long precursorId)
     {
-        if (!pasefCache.TryGetValue(precursorId, out List<Hdf5PeakRecord>? peaks))
+        if (!pasefCache.TryGetValue(precursorId, out List<RaxportPeakRecord>? peaks))
         {
             ReadPasefMsMsBatch(new[] { precursorId });
         }
 
-        return pasefCache.TryGetValue(precursorId, out peaks) ? peaks : new List<Hdf5PeakRecord>();
+        return pasefCache.TryGetValue(precursorId, out peaks) ? peaks : new List<RaxportPeakRecord>();
     }
 
     public void ReleasePasefMsMs(long precursorId)
@@ -1109,8 +1109,8 @@ internal sealed class BrukerTimsReader : IDisposable
     }
 
 
-    internal static List<Hdf5PeakRecord> BuildMobilityTracePeaks(
-        IReadOnlyList<Hdf5PeakRecord> centroids,
+    internal static List<RaxportPeakRecord> BuildMobilityTracePeaks(
+        IReadOnlyList<RaxportPeakRecord> centroids,
         IReadOnlyList<BrukerRawScan> rawScans,
         IReadOnlyList<double[]> mzByScan,
         IReadOnlyList<double> oneOverK0ByIndex,
@@ -1173,10 +1173,10 @@ internal sealed class BrukerTimsReader : IDisposable
         }
 
         omittedCentroids = 0;
-        List<Hdf5PeakRecord> peaks = new(centroids.Count);
+        List<RaxportPeakRecord> peaks = new(centroids.Count);
         for (int centroidIndex = 0; centroidIndex < centroids.Count; centroidIndex++)
         {
-            Hdf5PeakRecord centroid = centroids[centroidIndex];
+            RaxportPeakRecord centroid = centroids[centroidIndex];
             if (tracePointsByCentroid[centroidIndex] is not { Count: > 0 } tracePoints)
             {
                 omittedCentroids++;
@@ -1192,7 +1192,7 @@ internal sealed class BrukerTimsReader : IDisposable
                 intensities[i] = tracePoints[i].Intensity;
             }
 
-            peaks.Add(centroid with { MobilityTrace = new Hdf5PeakMobilityTrace(oneOverK0Indices, intensities) });
+            peaks.Add(centroid with { MobilityTrace = new RaxportPeakMobilityTrace(oneOverK0Indices, intensities) });
         }
 
         return peaks;
@@ -1247,7 +1247,7 @@ internal sealed class BrukerTimsReader : IDisposable
         }
     }
 
-    private static int FindNearestCentroid(IReadOnlyList<Hdf5PeakRecord> centroids, double mz, double mzTolerancePpm)
+    private static int FindNearestCentroid(IReadOnlyList<RaxportPeakRecord> centroids, double mz, double mzTolerancePpm)
     {
         int low = 0;
         int high = centroids.Count - 1;
@@ -1294,7 +1294,7 @@ internal sealed class BrukerTimsReader : IDisposable
         pasefCache[id] = CopyPeaks(numPeaks, mzValues, areaValues);
     }
 
-    private static List<Hdf5PeakRecord> CopyPeaks(uint numPeaks, IntPtr mzValues, IntPtr areaValues)
+    private static List<RaxportPeakRecord> CopyPeaks(uint numPeaks, IntPtr mzValues, IntPtr areaValues)
     {
         int count = checked((int)numPeaks);
         double[] mz = new double[count];
@@ -1305,10 +1305,10 @@ internal sealed class BrukerTimsReader : IDisposable
             Marshal.Copy(areaValues, area, 0, count);
         }
 
-        List<Hdf5PeakRecord> peaks = new(count);
+        List<RaxportPeakRecord> peaks = new(count);
         for (int i = 0; i < count; i++)
         {
-            peaks.Add(new Hdf5PeakRecord(mz[i], area[i], 0, 0, 0, 0));
+            peaks.Add(new RaxportPeakRecord(mz[i], area[i], 0, 0, 0, 0));
         }
 
         return peaks.OrderBy(peak => peak.Mz).ToList();

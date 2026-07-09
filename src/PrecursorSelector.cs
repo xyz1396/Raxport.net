@@ -5,14 +5,16 @@ internal static class PrecursorSelector
     private const double NeutronMass = 1.003355;
     private const double IsotopeEvidenceMzPadding = 1.5;
     private const int StrongIsotopeMatchCount = 3;
+    private const int MinTrustedPrecursorCharge = 1;
+    private const int MaxTrustedPrecursorCharge = 7;
     private static readonly int[] DefaultGuessedCharges = { 2, 3, 4 };
     private static readonly int[] ChargesInConsideration = { 2, 3, 4, 5, 6, 1 };
     private static readonly int[] PopularChargeOrder = { 2, 3, 4, 5, 6, 1 };
     private static readonly int[] ConservativeFallbackCharges = { 2, 3, 4 };
     private static readonly int[] IsotopeOffsets = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
-    public static List<Hdf5PeakRecord> FindPrecursorPeaks(
-        IReadOnlyList<Hdf5PeakRecord> peaks,
+    public static List<RaxportPeakRecord> FindPrecursorPeaks(
+        IReadOnlyList<RaxportPeakRecord> peaks,
         double precursorMz,
         double isolationWindow,
         int topN,
@@ -25,10 +27,10 @@ internal static class PrecursorSelector
     {
         if (topN <= 0 || peaks.Count == 0)
         {
-            return new List<Hdf5PeakRecord>();
+            return new List<RaxportPeakRecord>();
         }
 
-        List<Hdf5PeakRecord> evidencePeaks = GetPrecursorEvidencePeaks(
+        List<RaxportPeakRecord> evidencePeaks = GetPrecursorEvidencePeaks(
             peaks,
             precursorMz,
             isolationWindow,
@@ -36,7 +38,7 @@ internal static class PrecursorSelector
             oneOverK0Begin,
             oneOverK0End,
             oneOverK0ByIndex);
-        List<Hdf5PeakRecord> isotopeEvidencePeaks = GetIsotopeEvidencePeaks(
+        List<RaxportPeakRecord> isotopeEvidencePeaks = GetIsotopeEvidencePeaks(
             peaks,
             precursorMz,
             isolationWindow,
@@ -54,28 +56,28 @@ internal static class PrecursorSelector
             preferredCharge);
     }
 
-    public static List<Hdf5PeakRecord> FindPrecursorPeaksFromEvidence(
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
-        IReadOnlyList<Hdf5PeakRecord> isotopeEvidencePeaks,
+    public static List<RaxportPeakRecord> FindPrecursorPeaksFromEvidence(
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
+        IReadOnlyList<RaxportPeakRecord> isotopeEvidencePeaks,
         int topN,
         double intensityRatio,
         double mzTolerancePpm,
         int preferredCharge = 0)
     {
-        List<Hdf5PeakRecord> precursorPeaks = new();
+        List<RaxportPeakRecord> precursorPeaks = new();
         if (topN <= 0 || evidencePeaks.Count == 0)
         {
             return precursorPeaks;
         }
 
-        List<Hdf5PeakRecord> intensityOrderedEvidencePeaks = evidencePeaks.OrderByDescending(peak => peak.Intensity).ToList();
+        List<RaxportPeakRecord> intensityOrderedEvidencePeaks = evidencePeaks.OrderByDescending(peak => peak.Intensity).ToList();
         double totalIntensity = 0.000000001;
-        foreach (Hdf5PeakRecord peak in intensityOrderedEvidencePeaks)
+        foreach (RaxportPeakRecord peak in intensityOrderedEvidencePeaks)
         {
             totalIntensity += peak.Intensity;
         }
 
-        List<Hdf5PeakRecord> selectionPool = BuildHighIntensityPool(intensityOrderedEvidencePeaks, topN, intensityRatio, totalIntensity);
+        List<RaxportPeakRecord> selectionPool = BuildHighIntensityPool(intensityOrderedEvidencePeaks, topN, intensityRatio, totalIntensity);
         double summedIntensity = 0;
         for (int i = 0; i < selectionPool.Count; i++)
         {
@@ -84,7 +86,7 @@ internal static class PrecursorSelector
                 break;
             }
 
-            Hdf5PeakRecord selectedPeak = selectionPool[i];
+            RaxportPeakRecord selectedPeak = selectionPool[i];
             precursorPeaks.Add(selectedPeak);
             summedIntensity += selectedPeak.Intensity;
             if (precursorPeaks.Count >= topN)
@@ -103,8 +105,8 @@ internal static class PrecursorSelector
         return precursorPeaks;
     }
 
-    public static List<Hdf5PeakRecord> GetPrecursorEvidencePeaks(
-        IReadOnlyList<Hdf5PeakRecord> peaks,
+    public static List<RaxportPeakRecord> GetPrecursorEvidencePeaks(
+        IReadOnlyList<RaxportPeakRecord> peaks,
         double precursorMz,
         double isolationWindow,
         double mzTolerancePpm,
@@ -114,10 +116,10 @@ internal static class PrecursorSelector
     {
         if (peaks.Count == 0)
         {
-            return new List<Hdf5PeakRecord>();
+            return new List<RaxportPeakRecord>();
         }
 
-        List<Hdf5PeakRecord> peaksInRange = FindPeaksInRange(
+        List<RaxportPeakRecord> peaksInRange = FindPeaksInRange(
             peaks,
             precursorMz - isolationWindow / 2,
             precursorMz + isolationWindow / 2,
@@ -127,15 +129,15 @@ internal static class PrecursorSelector
             peaksInRange = peaksInRange
                 .Select(peak => ProjectPeakToMobilityWindow(peak, oneOverK0Begin.Value, oneOverK0End.Value, oneOverK0ByIndex))
                 .Where(peak => peak is not null)
-                .Cast<Hdf5PeakRecord>()
+                .Cast<RaxportPeakRecord>()
                 .ToList();
         }
 
         return peaksInRange.OrderBy(peak => peak.Mz).ToList();
     }
 
-    public static List<Hdf5PeakRecord> GetIsotopeEvidencePeaks(
-        IReadOnlyList<Hdf5PeakRecord> peaks,
+    public static List<RaxportPeakRecord> GetIsotopeEvidencePeaks(
+        IReadOnlyList<RaxportPeakRecord> peaks,
         double precursorMz,
         double isolationWindow,
         double mzTolerancePpm,
@@ -153,16 +155,16 @@ internal static class PrecursorSelector
             oneOverK0ByIndex);
     }
 
-    private static List<Hdf5PeakRecord> BuildHighIntensityPool(
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+    private static List<RaxportPeakRecord> BuildHighIntensityPool(
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
         int topN,
         double intensityRatio,
         double totalIntensity)
     {
-        List<Hdf5PeakRecord> pool = new();
+        List<RaxportPeakRecord> pool = new();
         int maxPoolCount = checked(topN * 2);
         double poolIntensity = 0;
-        foreach (Hdf5PeakRecord peak in evidencePeaks)
+        foreach (RaxportPeakRecord peak in evidencePeaks)
         {
             if (pool.Count >= maxPoolCount)
             {
@@ -181,8 +183,8 @@ internal static class PrecursorSelector
     }
 
     private static IReadOnlyList<int> ResolveIsotopeRemovalCharges(
-        Hdf5PeakRecord selectedPeak,
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        RaxportPeakRecord selectedPeak,
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
         int preferredCharge,
         double mzTolerancePpm)
     {
@@ -214,8 +216,8 @@ internal static class PrecursorSelector
     }
 
     private static List<int> InferStrongChargesFromIsotopes(
-        Hdf5PeakRecord peak,
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        RaxportPeakRecord peak,
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
         double mzTolerancePpm)
     {
         List<int> charges = new();
@@ -231,8 +233,8 @@ internal static class PrecursorSelector
     }
 
     private static double RemoveIsotopicPeaks(
-        List<Hdf5PeakRecord> peaks,
-        Hdf5PeakRecord selectedPeak,
+        List<RaxportPeakRecord> peaks,
+        RaxportPeakRecord selectedPeak,
         int selectedIndex,
         IReadOnlyList<int> isotopeCharges,
         double mzTolerancePpm)
@@ -249,8 +251,8 @@ internal static class PrecursorSelector
     }
 
     private static double RemoveIsotopicPeaksInDirection(
-        List<Hdf5PeakRecord> peaks,
-        Hdf5PeakRecord selectedPeak,
+        List<RaxportPeakRecord> peaks,
+        RaxportPeakRecord selectedPeak,
         int selectedIndex,
         IReadOnlyList<int> isotopeCharges,
         double mzTolerancePpm,
@@ -281,86 +283,66 @@ internal static class PrecursorSelector
         return removedIntensity;
     }
 
-    public static List<Hdf5PrecursorCandidateRecord> ExpandPrecursorCandidates(
-        IEnumerable<Hdf5PeakRecord> precursorPeaks,
-        int maxCandidates,
+    public static List<RaxportPrecursorCandidateRecord> ExpandPrecursorCandidates(
+        IEnumerable<RaxportPeakRecord> precursorPeaks,
+        int maxSelectedPrecursorPeaks,
         int preferredCharge = 0)
     {
-        List<Hdf5PeakRecord> selectedPeaks = precursorPeaks.ToList();
+        List<RaxportPeakRecord> selectedPeaks = precursorPeaks.ToList();
         return ExpandPrecursorCandidates(
             selectedPeaks,
             selectedPeaks,
             0,
             0,
-            maxCandidates,
+            maxSelectedPrecursorPeaks,
             mzTolerancePpm: 10,
             preferredCharge);
     }
 
-    public static List<Hdf5PrecursorCandidateRecord> ExpandPrecursorCandidates(
-        IReadOnlyList<Hdf5PeakRecord> precursorPeaks,
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+    public static List<RaxportPrecursorCandidateRecord> ExpandPrecursorCandidates(
+        IReadOnlyList<RaxportPeakRecord> precursorPeaks,
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
         double precursorMz,
         double isolationWindow,
-        int maxCandidates,
+        int maxSelectedPrecursorPeaks,
         double mzTolerancePpm,
         int preferredCharge = 0)
     {
-        List<Hdf5PrecursorCandidateRecord> candidates = new();
-        if (maxCandidates <= 0)
+        List<RaxportPrecursorCandidateRecord> candidates = new();
+        if (maxSelectedPrecursorPeaks <= 0)
         {
             return candidates;
         }
 
-        List<Hdf5PeakRecord> unknownChargePeaks = new();
-        foreach (Hdf5PeakRecord peak in precursorPeaks)
+        int expandedCandidateLimit = GetExpandedCandidateLimit(
+            precursorPeaks,
+            maxSelectedPrecursorPeaks,
+            precursorMz,
+            mzTolerancePpm,
+            preferredCharge);
+
+        foreach (RaxportPeakRecord peak in precursorPeaks)
         {
-            if (peak.Charge > 0)
+            if (IsTrustedPrecursorCharge(peak.Charge))
             {
                 AddOrKeepBest(peak, peak.Charge);
             }
+            else if (IsPreferredChargeForPeak(peak, precursorMz, mzTolerancePpm, preferredCharge))
+            {
+                AddOrKeepBest(peak, preferredCharge);
+            }
             else
             {
-                unknownChargePeaks.Add(peak);
-                if (preferredCharge > 0)
+                foreach (int guessedCharge in DefaultGuessedCharges)
                 {
-                    AddOrKeepBest(peak, preferredCharge);
-                }
-            }
-
-        }
-
-        if (candidates.Count < maxCandidates)
-        {
-            foreach (Hdf5PeakRecord peak in unknownChargePeaks)
-            {
-                int inferredCharge = InferChargeFromIsotopes(peak, evidencePeaks, mzTolerancePpm);
-                if (inferredCharge > 0)
-                {
-                    AddOrKeepBest(peak, inferredCharge);
-                }
-                else
-                {
-                    foreach (int guessedCharge in DefaultGuessedCharges)
-                    {
-                        AddOrKeepBest(peak, guessedCharge);
-                        if (candidates.Count >= maxCandidates)
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                if (candidates.Count >= maxCandidates)
-                {
-                    break;
+                    AddOrKeepBest(peak, guessedCharge);
                 }
             }
         }
 
-        return DeduplicateCandidates(candidates, mzTolerancePpm, maxCandidates);
+        return DeduplicateCandidates(candidates, mzTolerancePpm, expandedCandidateLimit);
 
-        void AddOrKeepBest(Hdf5PeakRecord peak, int charge)
+        void AddOrKeepBest(RaxportPeakRecord peak, int charge)
         {
             if (charge <= 0)
             {
@@ -369,7 +351,7 @@ internal static class PrecursorSelector
 
             for (int i = 0; i < candidates.Count; i++)
             {
-                Hdf5PrecursorCandidateRecord candidate = candidates[i];
+                RaxportPrecursorCandidateRecord candidate = candidates[i];
                 if (candidate.Charge == charge && WithinMzTolerance(candidate.Mz, peak.Mz, mzTolerancePpm))
                 {
                     if (peak.Intensity > candidate.Intensity)
@@ -381,25 +363,53 @@ internal static class PrecursorSelector
                 }
             }
 
-            if (candidates.Count < maxCandidates)
-            {
-                candidates.Add(CreateCandidate(peak, charge));
-            }
+            candidates.Add(CreateCandidate(peak, charge));
         }
     }
 
-    private static List<Hdf5PrecursorCandidateRecord> DeduplicateCandidates(
-        IReadOnlyList<Hdf5PrecursorCandidateRecord> candidates,
+    private static int GetExpandedCandidateLimit(
+        IReadOnlyList<RaxportPeakRecord> precursorPeaks,
+        int maxSelectedPrecursorPeaks,
+        double precursorMz,
+        double mzTolerancePpm,
+        int preferredCharge)
+    {
+        int selectedPeakCount = Math.Min(maxSelectedPrecursorPeaks, precursorPeaks.Count);
+        int candidateLimit = 0;
+        for (int i = 0; i < selectedPeakCount; i++)
+        {
+            RaxportPeakRecord peak = precursorPeaks[i];
+            bool hasTrustedCharge = IsTrustedPrecursorCharge(peak.Charge)
+                || IsPreferredChargeForPeak(peak, precursorMz, mzTolerancePpm, preferredCharge);
+            candidateLimit = checked(candidateLimit + (hasTrustedCharge ? 1 : DefaultGuessedCharges.Length));
+        }
+
+        return candidateLimit;
+    }
+
+    private static bool IsPreferredChargeForPeak(
+        RaxportPeakRecord peak,
+        double precursorMz,
+        double mzTolerancePpm,
+        int preferredCharge)
+    {
+        return IsTrustedPrecursorCharge(preferredCharge)
+            && precursorMz > 0
+            && WithinMzTolerance(peak.Mz, precursorMz, mzTolerancePpm);
+    }
+
+    private static List<RaxportPrecursorCandidateRecord> DeduplicateCandidates(
+        IReadOnlyList<RaxportPrecursorCandidateRecord> candidates,
         double mzTolerancePpm,
         int maxCandidates)
     {
-        List<Hdf5PrecursorCandidateRecord> deduplicated = new();
-        foreach (Hdf5PrecursorCandidateRecord candidate in candidates)
+        List<RaxportPrecursorCandidateRecord> deduplicated = new();
+        foreach (RaxportPrecursorCandidateRecord candidate in candidates)
         {
             bool merged = false;
             for (int i = 0; i < deduplicated.Count; i++)
             {
-                Hdf5PrecursorCandidateRecord existing = deduplicated[i];
+                RaxportPrecursorCandidateRecord existing = deduplicated[i];
                 if (existing.Charge == candidate.Charge && WithinMzTolerance(existing.Mz, candidate.Mz, mzTolerancePpm))
                 {
                     if (candidate.Intensity > existing.Intensity)
@@ -421,14 +431,19 @@ internal static class PrecursorSelector
         return deduplicated;
     }
 
-    private static Hdf5PrecursorCandidateRecord CreateCandidate(Hdf5PeakRecord peak, int charge)
+    private static RaxportPrecursorCandidateRecord CreateCandidate(RaxportPeakRecord peak, int charge)
     {
-        return new Hdf5PrecursorCandidateRecord(charge, peak.Mz, peak.Intensity, peak.CandidateOneOverK0);
+        return new RaxportPrecursorCandidateRecord(charge, peak.Mz, peak.Intensity, peak.CandidateOneOverK0);
+    }
+
+    private static bool IsTrustedPrecursorCharge(int charge)
+    {
+        return charge >= MinTrustedPrecursorCharge && charge <= MaxTrustedPrecursorCharge;
     }
 
     private static int InferChargeFromIsotopes(
-        Hdf5PeakRecord peak,
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        RaxportPeakRecord peak,
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
         double mzTolerancePpm)
     {
         int bestCharge = 0;
@@ -447,8 +462,8 @@ internal static class PrecursorSelector
     }
 
     private static int CountIsotopeMatches(
-        Hdf5PeakRecord peak,
-        IReadOnlyList<Hdf5PeakRecord> evidencePeaks,
+        RaxportPeakRecord peak,
+        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
         int charge,
         double mzTolerancePpm)
     {
@@ -457,7 +472,7 @@ internal static class PrecursorSelector
         {
             double expectedMz = peak.Mz + isotopeOffset * NeutronMass / charge;
             bool found = false;
-            foreach (Hdf5PeakRecord evidencePeak in evidencePeaks)
+            foreach (RaxportPeakRecord evidencePeak in evidencePeaks)
             {
                 if (evidencePeak.Mz <= peak.Mz)
                 {
@@ -482,13 +497,13 @@ internal static class PrecursorSelector
         return matches;
     }
 
-    private static Hdf5PeakRecord? ProjectPeakToMobilityWindow(
-        Hdf5PeakRecord peak,
+    private static RaxportPeakRecord? ProjectPeakToMobilityWindow(
+        RaxportPeakRecord peak,
         double oneOverK0Begin,
         double oneOverK0End,
         IReadOnlyList<double>? oneOverK0ByIndex)
     {
-        Hdf5PeakMobilityTrace? trace = peak.MobilityTrace;
+        RaxportPeakMobilityTrace? trace = peak.MobilityTrace;
         if (trace is null || trace.Count == 0 || oneOverK0ByIndex is null || oneOverK0ByIndex.Count == 0)
         {
             return null;
@@ -530,13 +545,13 @@ internal static class PrecursorSelector
         return peak with { Intensity = summedIntensity, CandidateOneOverK0 = bestOneOverK0 };
     }
 
-    private static List<Hdf5PeakRecord> FindPeaksInRange(
-        IReadOnlyList<Hdf5PeakRecord> peaks,
+    private static List<RaxportPeakRecord> FindPeaksInRange(
+        IReadOnlyList<RaxportPeakRecord> peaks,
         double start,
         double end,
         double mzTolerancePpm)
     {
-        List<Hdf5PeakRecord> peaksInRange = new();
+        List<RaxportPeakRecord> peaksInRange = new();
         double lowerBound = start - MzToleranceDa(start, mzTolerancePpm);
         double upperBound = end + MzToleranceDa(end, mzTolerancePpm);
         int low = 0;
@@ -568,8 +583,8 @@ internal static class PrecursorSelector
     }
 
     private static bool CouldBeIsotopicPeak(
-        Hdf5PeakRecord selectedPeak,
-        Hdf5PeakRecord candidatePeak,
+        RaxportPeakRecord selectedPeak,
+        RaxportPeakRecord candidatePeak,
         int isotopeOffset,
         int direction,
         IReadOnlyList<int> isotopeCharges,

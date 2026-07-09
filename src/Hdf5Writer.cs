@@ -4,68 +4,15 @@ using System.Text;
 
 namespace Raxport;
 
-internal sealed record Hdf5PeakRecord(
-    double Mz,
-    double Intensity,
-    double Resolution,
-    double Baseline,
-    double Noise,
-    int Charge,
-    Hdf5PeakMobilityTrace? MobilityTrace = null,
-    double CandidateOneOverK0 = 0);
-
-internal sealed record Hdf5PeakMobilityTrace(
-    int[] OneOverK0Indices,
-    float[] Intensities)
+internal static class Hdf5BufferDefaults
 {
-    public int Count
-    {
-        get
-        {
-            if (OneOverK0Indices.Length != Intensities.Length)
-            {
-                throw new InvalidOperationException("Mobility trace index and intensity arrays must have matching lengths.");
-            }
-
-            return OneOverK0Indices.Length;
-        }
-    }
+    public const long PeaksPerFlushUnit = 10_000_000;
+    public const int DefaultPeakFlushUnits = 2;
+    public const long DefaultMaxBufferedPeaks = DefaultPeakFlushUnits * PeaksPerFlushUnit;
+    public const int DefaultHdf5CompressionLevel = 1;
 }
 
-internal sealed record Hdf5PrecursorCandidateRecord(
-    int Charge,
-    double Mz,
-    double Intensity = 0,
-    double OneOverK0 = 0);
-
-internal sealed record Hdf5ReactionRecord(
-    double PrecursorMass,
-    double IsolationWidth,
-    int ChargeState,
-    double CollisionEnergy,
-    bool CollisionEnergyValid,
-    string ActivationType,
-    bool MultipleActivation,
-    bool PrecursorRangeValid,
-    double FirstPrecursorMass,
-    double LastPrecursorMass,
-    double IsolationWidthOffset,
-    IReadOnlyList<Hdf5PrecursorCandidateRecord> Candidates,
-    double OneOverK0Begin = 0,
-    double OneOverK0End = 0);
-
-internal sealed record Hdf5ScanRecord(
-    int ScanNumber,
-    int MsOrder,
-    double RetentionTime,
-    double Tic,
-    string ScanFilter,
-    string Activation,
-    int ParentScanNumber,
-    Hdf5ReactionRecord? Reaction,
-    IReadOnlyList<Hdf5PeakRecord> Peaks);
-
-internal sealed partial class Hdf5BufferedWriter : IDisposable
+internal sealed partial class Hdf5Writer : IRaxportWriter
 {
     private const int ErrorBufferLength = 4096;
     private readonly long maxBufferedPeaks;
@@ -81,7 +28,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
     private readonly PrimitiveBuffer<int> traceOneOverK0Index = new();
     private readonly PrimitiveBuffer<float> traceIntensity = new();
     private readonly List<BufferedReaction> reactions = new();
-    private readonly List<Hdf5PrecursorCandidateRecord> candidates = new();
+    private readonly List<RaxportPrecursorCandidateRecord> candidates = new();
     private readonly Dictionary<string, int> scanFilterIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> activationIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> reactionActivationTypeIds = new(StringComparer.Ordinal);
@@ -98,7 +45,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
     private long totalScans;
     private bool disposed;
 
-    public Hdf5BufferedWriter(
+    public Hdf5Writer(
         string path,
         string sourceRawFile,
         string instrumentModel,
@@ -131,6 +78,8 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
 
     public TimeSpan HdfWriteElapsed { get; private set; }
 
+    public TimeSpan WriteElapsed => HdfWriteElapsed;
+
     public int FlushCount { get; private set; }
 
     public long TotalScans => totalScans;
@@ -143,12 +92,12 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
 
     public long TotalCandidates => totalCandidates;
 
-    public void AddScan(Hdf5ScanRecord scan)
+    public void AddScan(RaxportScanRecord scan)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
         long incomingTraceCount = 0;
-        foreach (Hdf5PeakRecord peak in scan.Peaks)
+        foreach (RaxportPeakRecord peak in scan.Peaks)
         {
             incomingTraceCount += peak.MobilityTrace?.Count ?? 0;
         }
@@ -161,7 +110,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         }
 
         long peakStart = totalPeaks + peakMz.Count;
-        foreach (Hdf5PeakRecord peak in scan.Peaks)
+        foreach (RaxportPeakRecord peak in scan.Peaks)
         {
             AppendPeak(peak);
         }
@@ -203,7 +152,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         }
     }
 
-    private void AppendPeak(Hdf5PeakRecord peak)
+    private void AppendPeak(RaxportPeakRecord peak)
     {
         int priorPeakCount = peakMz.Count;
         peakMz.Add(peak.Mz);
@@ -213,7 +162,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         AddOptionalValue(ref peakNoise, peak.Noise, priorPeakCount);
         AddOptionalValue(ref peakCharge, peak.Charge, priorPeakCount);
 
-        Hdf5PeakMobilityTrace? trace = peak.MobilityTrace;
+        RaxportPeakMobilityTrace? trace = peak.MobilityTrace;
         int traceCount = trace?.Count ?? 0;
         if (traceCount > 0 && trace is not null)
         {
@@ -330,7 +279,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
             double[] candidateOneOverK0 = new double[candidateBatchCount];
             for (int i = 0; i < candidateBatchCount; i++)
             {
-                Hdf5PrecursorCandidateRecord candidate = candidates[i];
+                RaxportPrecursorCandidateRecord candidate = candidates[i];
                 candidateCharge[i] = candidate.Charge;
                 candidateMz[i] = candidate.Mz;
                 candidateIntensity[i] = candidate.Intensity;
@@ -558,7 +507,7 @@ internal sealed partial class Hdf5BufferedWriter : IDisposable
         double OneOverK0Begin,
         double OneOverK0End)
     {
-        public BufferedReaction(Hdf5ReactionRecord reaction, int activationTypeId, long candidateStart, int candidateCount)
+        public BufferedReaction(RaxportReactionRecord reaction, int activationTypeId, long candidateStart, int candidateCount)
             : this(
                 reaction.PrecursorMass,
                 reaction.IsolationWidth,

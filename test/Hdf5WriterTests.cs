@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace Raxport;
 
 [TestClass]
-public sealed class Hdf5BufferedWriterTests
+public sealed class Hdf5WriterTests
 {
     [TestMethod]
     public void FlushesAcrossConfiguredPeakBoundary()
@@ -13,7 +13,7 @@ public sealed class Hdf5BufferedWriterTests
         string path = Path.Combine(Path.GetTempPath(), $"raxport-boundary-{Guid.NewGuid():N}.h5");
         try
         {
-            using Hdf5BufferedWriter writer = new(path, "boundary.raw", "test instrument", "test", 3);
+            using Hdf5Writer writer = new(path, "boundary.raw", "test instrument", "test", 3);
             writer.AddScan(CreateScan(1, 1, null));
             Assert.AreEqual(0, writer.FlushCount);
             writer.AddScan(CreateScan(2, 1, null));
@@ -33,7 +33,7 @@ public sealed class Hdf5BufferedWriterTests
         string path = Path.Combine(Path.GetTempPath(), $"raxport-offsets-{Guid.NewGuid():N}.h5");
         try
         {
-            using Hdf5BufferedWriter writer = new(path, "offsets.raw", "test instrument", "test", 20000);
+            using Hdf5Writer writer = new(path, "offsets.raw", "test instrument", "test", 20000);
             writer.AddScan(CreateScan(10, 1, null));
             writer.AddScan(CreateScan(11, 3, CreateReaction(1.23, 0.98)));
         }
@@ -48,7 +48,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorSuppressesIsotopicPeaksBeforeNextCandidate()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.0000, 1000, 0, 0, 0, 2),
             new(500.5017, 800, 0, 0, 0, 2),
@@ -56,9 +56,9 @@ public sealed class Hdf5BufferedWriterTests
             new(501.5000, 500, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.75, 3.0, 2, 0.99, 10);
-        List<Hdf5PeakRecord> evidence = PrecursorSelector.GetPrecursorEvidencePeaks(peaks, 500.75, 3.0, 10);
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, evidence, 500.75, 3.0, 2, 10);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.75, 3.0, 2, 0.99, 10);
+        List<RaxportPeakRecord> evidence = PrecursorSelector.GetPrecursorEvidencePeaks(peaks, 500.75, 3.0, 10);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, evidence, 500.75, 3.0, 2, 10);
 
         Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(500.0000, selected[0].Mz, 0.0001);
@@ -71,7 +71,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorThermoTrailerChargeDoesNotDriveIsotopeRemoval()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.000000, 1000, 0, 0, 0, 0),
             new(500.501678, 900, 0, 0, 0, 0),
@@ -79,9 +79,9 @@ public sealed class Hdf5BufferedWriterTests
         };
 
         int trailerCharge = 4;
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10);
-        List<Hdf5PeakRecord> evidence = PrecursorSelector.GetPrecursorEvidencePeaks(peaks, 501.0, 4.0, 10);
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10);
+        List<RaxportPeakRecord> evidence = PrecursorSelector.GetPrecursorEvidencePeaks(peaks, 501.0, 4.0, 10);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
             evidence,
             501.0,
@@ -93,13 +93,13 @@ public sealed class Hdf5BufferedWriterTests
         Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
         Assert.AreEqual(502.000000, selected[1].Mz, 0.0001);
-        Assert.AreEqual(trailerCharge, candidates[0].Charge);
+        Assert.AreEqual(2, candidates[0].Charge);
     }
 
     [TestMethod]
     public void PrecursorSelectorLimitsSelectionPoolByTopNMultiplier()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.000000, 1000, 0, 0, 0, 2),
             new(500.501678, 900, 0, 0, 0, 0),
@@ -108,7 +108,7 @@ public sealed class Hdf5BufferedWriterTests
             new(503.000000, 600, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
 
         Assert.AreEqual(1, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
@@ -117,7 +117,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorLimitsSelectionPoolByIntensityRatio()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.0, 1000, 0, 0, 0, 0),
             new(501.0, 100, 0, 0, 0, 0),
@@ -125,7 +125,7 @@ public sealed class Hdf5BufferedWriterTests
             new(503.0, 100, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 5, 0.5, 10);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 5, 0.5, 10);
 
         Assert.AreEqual(1, selected.Count);
         Assert.AreEqual(500.0, selected[0].Mz, 0.0001);
@@ -134,7 +134,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorCapsSelectedPrecursorCountAtTopN()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.0, 1000, 0, 0, 0, 0),
             new(501.0, 900, 0, 0, 0, 0),
@@ -142,7 +142,7 @@ public sealed class Hdf5BufferedWriterTests
             new(503.0, 700, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
 
         Assert.AreEqual(2, selected.Count);
         CollectionAssert.AreEqual(new[] { 500.0, 501.0 }, selected.Select(peak => peak.Mz).ToArray());
@@ -151,7 +151,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorUsesMs1PeakChargeBeforePreferredChargeForIsotopeRemoval()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.000000, 1000, 0, 0, 0, 3),
             new(500.334452, 900, 0, 0, 0, 0),
@@ -159,7 +159,7 @@ public sealed class Hdf5BufferedWriterTests
             new(502.000000, 700, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10, preferredCharge: 2);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10, preferredCharge: 2);
 
         Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
@@ -169,7 +169,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorUsesPreferredChargeForBrukerLikeIsotopeRemoval()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(1102.024258, 1000, 0, 0, 0, 0),
             new(1102.275096, 900, 0, 0, 0, 0),
@@ -178,7 +178,7 @@ public sealed class Hdf5BufferedWriterTests
             new(1104.000000, 600, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 1103.0, 5.0, 3, 1.0, 10, preferredCharge: 4);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 1103.0, 5.0, 3, 1.0, 10, preferredCharge: 4);
 
         Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(1102.024258, selected[0].Mz, 0.0001);
@@ -188,7 +188,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorInfersStrongChargeBeforeIsotopeRemoval()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.000000, 1000, 0, 0, 0, 0),
             new(500.334452, 900, 0, 0, 0, 0),
@@ -197,7 +197,7 @@ public sealed class Hdf5BufferedWriterTests
             new(502.000000, 600, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 3, 1.0, 10);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 3, 1.0, 10);
 
         Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
@@ -205,9 +205,9 @@ public sealed class Hdf5BufferedWriterTests
     }
 
     [TestMethod]
-    public void PrecursorSelectorUsesPaddedIsotopeEvidenceOnlyForChargeInference()
+    public void PrecursorSelectorUsesDefaultGuessWhenThermoChargeIsMissing()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.000000, 1000, 0, 0, 0, 0),
             new(500.334452, 900, 0, 0, 0, 0),
@@ -216,9 +216,9 @@ public sealed class Hdf5BufferedWriterTests
             new(502.000000, 600, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.0, 0.1, 2, 1.0, 10);
-        List<Hdf5PeakRecord> isotopeEvidence = PrecursorSelector.GetIsotopeEvidencePeaks(peaks, 500.0, 0.1, 10);
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.0, 0.1, 2, 1.0, 10);
+        List<RaxportPeakRecord> isotopeEvidence = PrecursorSelector.GetIsotopeEvidencePeaks(peaks, 500.0, 0.1, 10);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
             isotopeEvidence,
             500.0,
@@ -228,20 +228,20 @@ public sealed class Hdf5BufferedWriterTests
 
         Assert.AreEqual(1, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
-        Assert.AreEqual(3, candidates[0].Charge);
+        Assert.AreEqual(2, candidates[0].Charge);
     }
 
     [TestMethod]
     public void PrecursorSelectorUsesConservativeFallbackChargeOrder()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.000000, 1000, 0, 0, 0, 0),
             new(500.501678, 900, 0, 0, 0, 0),
             new(500.334452, 800, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.5, 2.0, 2, 1.0, 10);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.5, 2.0, 2, 1.0, 10);
 
         Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
@@ -251,14 +251,14 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorStopsForwardRemovalAtFirstMissingOffset()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(500.000000, 1000, 0, 0, 0, 2),
             new(501.003355, 900, 0, 0, 0, 0),
             new(502.000000, 800, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10);
 
         Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
@@ -268,21 +268,21 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorRemovesBackwardIsotopesAndStopsAtFirstMissingOffset()
     {
-        Hdf5PeakRecord[] withMinusOne =
+        RaxportPeakRecord[] withMinusOne =
         {
             new(500.501678, 1000, 0, 0, 0, 2),
             new(500.000000, 900, 0, 0, 0, 0),
             new(502.000000, 800, 0, 0, 0, 0)
         };
-        Hdf5PeakRecord[] missingMinusOne =
+        RaxportPeakRecord[] missingMinusOne =
         {
             new(501.003355, 1000, 0, 0, 0, 2),
             new(500.000000, 900, 0, 0, 0, 0),
             new(502.000000, 800, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> removed = PrecursorSelector.FindPrecursorPeaks(withMinusOne, 501.0, 4.0, 2, 1.0, 10);
-        List<Hdf5PeakRecord> stopped = PrecursorSelector.FindPrecursorPeaks(missingMinusOne, 501.0, 4.0, 2, 1.0, 10);
+        List<RaxportPeakRecord> removed = PrecursorSelector.FindPrecursorPeaks(withMinusOne, 501.0, 4.0, 2, 1.0, 10);
+        List<RaxportPeakRecord> stopped = PrecursorSelector.FindPrecursorPeaks(missingMinusOne, 501.0, 4.0, 2, 1.0, 10);
 
         Assert.AreEqual(2, removed.Count);
         Assert.AreEqual(500.501678, removed[0].Mz, 0.0001);
@@ -295,13 +295,13 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorExpandsUnknownChargeUsingRawDefaults()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
             new(700.0, 1000, 0, 0, 0, 0)
         };
 
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 700.0, 1.0, 3, 0.99, 10);
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 3);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 700.0, 1.0, 3, 0.99, 10);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 3);
 
         CollectionAssert.AreEqual(new[] { 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
         CollectionAssert.AreEqual(new[] { 700.0, 700.0, 700.0 }, candidates.Select(candidate => candidate.Mz).ToArray());
@@ -309,70 +309,93 @@ public sealed class Hdf5BufferedWriterTests
 
 
     [TestMethod]
-    public void PrecursorSelectorUsesPreferredChargeThenGuessesToTopN()
+    public void PrecursorSelectorExpandsSelectedMzCountIntoGuessedCharges()
     {
-        Hdf5PeakRecord[] selected =
+        RaxportPeakRecord[] selected =
+        {
+            new(600.0, 1000, 0, 0, 0, 0),
+            new(601.0, 900, 0, 0, 0, 0),
+            new(602.0, 800, 0, 0, 0, 0),
+            new(603.0, 700, 0, 0, 0, 0),
+            new(604.0, 600, 0, 0, 0, 0),
+            new(605.0, 500, 0, 0, 0, 0)
+        };
+
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 6);
+
+        Assert.AreEqual(18, candidates.Count);
+        CollectionAssert.AreEqual(
+            new[] { 600.0, 601.0, 602.0, 603.0, 604.0, 605.0 },
+            candidates.Select(candidate => candidate.Mz).Distinct().ToArray());
+        CollectionAssert.AreEqual(new[] { 2, 3, 4 }, candidates.Take(3).Select(candidate => candidate.Charge).ToArray());
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesPreferredChargeInsteadOfGuessesAtTrailerMz()
+    {
+        RaxportPeakRecord[] selected =
         {
             new(600.0, 1000, 0, 0, 0, 0),
             new(601.0, 900, 0, 0, 0, 0)
         };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
-            Array.Empty<Hdf5PeakRecord>(),
+            Array.Empty<RaxportPeakRecord>(),
             600.0,
             2.0,
             5,
             10,
             preferredCharge: 2);
 
-        CollectionAssert.AreEqual(new[] { 2, 2, 3, 4, 3 }, candidates.Select(candidate => candidate.Charge).ToArray());
-        CollectionAssert.AreEqual(new[] { 600.0, 601.0, 600.0, 600.0, 601.0 }, candidates.Select(candidate => candidate.Mz).ToArray());
+        CollectionAssert.AreEqual(new[] { 2, 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
+        CollectionAssert.AreEqual(new[] { 600.0, 601.0, 601.0, 601.0 }, candidates.Select(candidate => candidate.Mz).ToArray());
     }
 
     [TestMethod]
     public void PrecursorSelectorRemovesDuplicateCandidates()
     {
-        Hdf5PeakRecord[] selected =
+        RaxportPeakRecord[] selected =
         {
             new(600.0, 1000, 0, 0, 0, 0),
             new(600.0, 900, 0, 0, 0, 0),
             new(601.0, 800, 0, 0, 0, 0)
         };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
-            Array.Empty<Hdf5PeakRecord>(),
+            Array.Empty<RaxportPeakRecord>(),
             600.0,
             2.0,
             6,
             10,
             preferredCharge: 2);
 
-        CollectionAssert.AreEqual(new[] { 2, 2, 3, 4, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
-        CollectionAssert.AreEqual(new[] { 600.0, 601.0, 600.0, 600.0, 601.0, 601.0 }, candidates.Select(candidate => candidate.Mz).ToArray());
+        CollectionAssert.AreEqual(new[] { 2, 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
+        CollectionAssert.AreEqual(new[] { 600.0, 601.0, 601.0, 601.0 }, candidates.Select(candidate => candidate.Mz).ToArray());
         Assert.AreEqual(1000, candidates[0].Intensity, 0.0001);
     }
 
     [TestMethod]
     public void PrecursorSelectorDeduplicatesSameChargeWithinMzTolerance()
     {
-        Hdf5PeakRecord[] selected =
+        RaxportPeakRecord[] selected =
         {
             new(430.88861083984375, 100, 0, 0, 0, 3),
             new(430.8926696777344, 200, 0, 0, 0, 3),
             new(431.02, 50, 0, 0, 0, 3)
         };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
-            Array.Empty<Hdf5PeakRecord>(),
+            Array.Empty<RaxportPeakRecord>(),
             431.0,
             2.0,
             5,
             10);
 
         Assert.AreEqual(2, candidates.Count);
+        CollectionAssert.AreEqual(new[] { 3, 3 }, candidates.Select(candidate => candidate.Charge).ToArray());
         Assert.AreEqual(430.8926696777344, candidates[0].Mz, 0.0000001);
         Assert.AreEqual(200, candidates[0].Intensity, 0.0001);
         Assert.AreEqual(431.02, candidates[1].Mz, 0.0000001);
@@ -381,12 +404,12 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorUsesRealPeakChargeBeforePreferredCharge()
     {
-        Hdf5PeakRecord[] selected =
+        RaxportPeakRecord[] selected =
         {
             new(600.0, 1000, 0, 0, 0, 5)
         };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
             selected,
             600.0,
@@ -395,23 +418,85 @@ public sealed class Hdf5BufferedWriterTests
             10,
             preferredCharge: 2);
 
-        Assert.AreEqual(1, candidates.Count);
-        Assert.AreEqual(5, candidates[0].Charge);
+        CollectionAssert.AreEqual(new[] { 5 }, candidates.Select(candidate => candidate.Charge).ToArray());
+    }
+
+
+    [TestMethod]
+    public void PrecursorSelectorAcceptsPeakChargeSeven()
+    {
+        RaxportPeakRecord[] selected =
+        {
+            new(600.0, 1000, 0, 0, 0, 7)
+        };
+
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            selected,
+            selected,
+            600.0,
+            1.0,
+            1,
+            10,
+            preferredCharge: 2);
+
+        CollectionAssert.AreEqual(new[] { 7 }, candidates.Select(candidate => candidate.Charge).ToArray());
     }
 
     [TestMethod]
-    public void PrecursorSelectorInfersChargeFromStrongIsotopeEvidence()
+    public void PrecursorSelectorUsesPreferredChargeOnlyForTrailerMz()
     {
-        Hdf5PeakRecord[] evidence =
+        RaxportPeakRecord[] selected =
+        {
+            new(600.0000, 1000, 0, 0, 0, 20),
+            new(601.0000, 900, 0, 0, 0, 0)
+        };
+
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            selected,
+            selected,
+            600.0005,
+            2.0,
+            2,
+            10,
+            preferredCharge: 6);
+
+        CollectionAssert.AreEqual(new[] { 6, 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
+        CollectionAssert.AreEqual(new[] { 600.0, 601.0, 601.0, 601.0 }, candidates.Select(candidate => candidate.Mz).ToArray());
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorGuessesWhenThermoChargesAreOutOfRange()
+    {
+        RaxportPeakRecord[] selected =
+        {
+            new(600.0, 1000, 0, 0, 0, 20)
+        };
+
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            selected,
+            selected,
+            600.0,
+            1.0,
+            3,
+            10,
+            preferredCharge: 15);
+
+        CollectionAssert.AreEqual(new[] { 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesDefaultGuessInsteadOfStrongIsotopeCharge()
+    {
+        RaxportPeakRecord[] evidence =
         {
             new(500.000000, 1000, 0, 0, 0, 0),
             new(500.334452, 700, 0, 0, 0, 0),
             new(500.668903, 500, 0, 0, 0, 0),
             new(501.003355, 300, 0, 0, 0, 0)
         };
-        Hdf5PeakRecord[] selected = { evidence[0] };
+        RaxportPeakRecord[] selected = { evidence[0] };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
             evidence,
             500.0,
@@ -419,13 +504,13 @@ public sealed class Hdf5BufferedWriterTests
             1,
             10);
 
-        Assert.AreEqual(3, candidates[0].Charge);
+        Assert.AreEqual(2, candidates[0].Charge);
     }
 
     [TestMethod]
     public void PrecursorSelectorUsesHighestIsotopeScoreBeforeChargePrior()
     {
-        Hdf5PeakRecord[] evidence =
+        RaxportPeakRecord[] evidence =
         {
             new(500.000000, 1000, 0, 0, 0, 0),
             new(500.501678, 900, 0, 0, 0, 0),
@@ -434,9 +519,9 @@ public sealed class Hdf5BufferedWriterTests
             new(502.006710, 600, 0, 0, 0, 0),
             new(503.010065, 500, 0, 0, 0, 0)
         };
-        Hdf5PeakRecord[] selected = { evidence[0] };
+        RaxportPeakRecord[] selected = { evidence[0] };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
             evidence,
             500.0,
@@ -448,16 +533,16 @@ public sealed class Hdf5BufferedWriterTests
     }
 
     [TestMethod]
-    public void PrecursorSelectorUsesBestWeakIsotopeCharge()
+    public void PrecursorSelectorUsesDefaultGuessInsteadOfWeakIsotopeCharge()
     {
-        Hdf5PeakRecord[] evidence =
+        RaxportPeakRecord[] evidence =
         {
             new(500.000000, 1000, 0, 0, 0, 0),
             new(500.200671, 700, 0, 0, 0, 0)
         };
-        Hdf5PeakRecord[] selected = { evidence[0] };
+        RaxportPeakRecord[] selected = { evidence[0] };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
             evidence,
             500.0,
@@ -465,18 +550,18 @@ public sealed class Hdf5BufferedWriterTests
             1,
             10);
 
-        Assert.AreEqual(5, candidates[0].Charge);
+        Assert.AreEqual(2, candidates[0].Charge);
     }
 
     [TestMethod]
     public void PrecursorSelectorKeepsDifferentChargesAtSameMz()
     {
-        Hdf5PeakRecord[] selected =
+        RaxportPeakRecord[] selected =
         {
             new(700.0, 1000, 0, 0, 0, 0)
         };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 3);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 3);
 
         CollectionAssert.AreEqual(new[] { 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
         Assert.IsTrue(candidates.All(candidate => Math.Abs(candidate.Mz - 700.0) < 0.0001));
@@ -485,13 +570,13 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorDeduplicatesByMzToleranceAndKeepsStrongestEvidence()
     {
-        Hdf5PeakRecord[] selected =
+        RaxportPeakRecord[] selected =
         {
             new(600.0000, 100, 0, 0, 0, 0, null, 1.10),
             new(600.0030, 500, 0, 0, 0, 0, null, 1.30)
         };
 
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
             selected,
             selected,
             600.0,
@@ -512,8 +597,8 @@ public sealed class Hdf5BufferedWriterTests
         string path = Path.Combine(Path.GetTempPath(), $"raxport-mobility-traces-{Guid.NewGuid():N}.h5");
         try
         {
-            using Hdf5BufferedWriter writer = new(path, "traces.d", "timsTOF", "test", 20000);
-            writer.AddScan(new Hdf5ScanRecord(
+            using Hdf5Writer writer = new(path, "traces.d", "timsTOF", "test", 20000);
+            writer.AddScan(new RaxportScanRecord(
                 1,
                 1,
                 0.5,
@@ -524,10 +609,10 @@ public sealed class Hdf5BufferedWriterTests
                 null,
                 new[]
                 {
-                    new Hdf5PeakRecord(500.1, 1000, 0, 0, 0, 0, new Hdf5PeakMobilityTrace(
+                    new RaxportPeakRecord(500.1, 1000, 0, 0, 0, 0, new RaxportPeakMobilityTrace(
                         new[] { 10, 12 },
                         new[] { 20f, 30f })),
-                    new Hdf5PeakRecord(600.2, 2000, 0, 0, 0, 0)
+                    new RaxportPeakRecord(600.2, 2000, 0, 0, 0, 0)
                 }));
         }
         finally
@@ -557,7 +642,7 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void BrukerMobilityTraceMatchingAggregatesNearestCentroidWithinPpm()
     {
-        Hdf5PeakRecord[] centroids =
+        RaxportPeakRecord[] centroids =
         {
             new(500.0000, 1000, 0, 0, 0, 0),
             new(501.0000, 2000, 0, 0, 0, 0),
@@ -580,7 +665,7 @@ public sealed class Hdf5BufferedWriterTests
         oneOverK0[11] = 1.20;
         oneOverK0[12] = 1.30;
 
-        List<Hdf5PeakRecord> peaks = BrukerTimsReader.BuildMobilityTracePeaks(
+        List<RaxportPeakRecord> peaks = BrukerTimsReader.BuildMobilityTracePeaks(
             centroids,
             rawScans,
             mzByScan,
@@ -601,12 +686,12 @@ public sealed class Hdf5BufferedWriterTests
     [TestMethod]
     public void PrecursorSelectorUsesMobilityWindowTraceIntensityAndCandidateMobility()
     {
-        Hdf5PeakRecord[] peaks =
+        RaxportPeakRecord[] peaks =
         {
-            new(500.0, 1000, 0, 0, 0, 0, new Hdf5PeakMobilityTrace(
+            new(500.0, 1000, 0, 0, 0, 0, new RaxportPeakMobilityTrace(
                 new[] { 0, 20 },
                 new[] { 10f, 100f })),
-            new(501.0, 900, 0, 0, 0, 0, new Hdf5PeakMobilityTrace(
+            new(501.0, 900, 0, 0, 0, 0, new RaxportPeakMobilityTrace(
                 new[] { 0 },
                 new[] { 50f }))
         };
@@ -614,8 +699,8 @@ public sealed class Hdf5BufferedWriterTests
         double[] oneOverK0Axis = new double[21];
         oneOverK0Axis[0] = 1.00;
         oneOverK0Axis[20] = 1.20;
-        List<Hdf5PeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.0, 3.0, 1, 0.99, 10, 1.15, 1.25, oneOverK0Axis);
-        List<Hdf5PrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 3);
+        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.0, 3.0, 1, 0.99, 10, 1.15, 1.25, oneOverK0Axis);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 3);
 
         Assert.AreEqual(1, selected.Count);
         Assert.AreEqual(500.0, selected[0].Mz, 0.0001);
@@ -625,9 +710,9 @@ public sealed class Hdf5BufferedWriterTests
         Assert.IsTrue(candidates.All(candidate => Math.Abs(candidate.OneOverK0 - 1.20) < 0.0001));
     }
 
-    private static Hdf5ScanRecord CreateScan(int scanNumber, int msOrder, Hdf5ReactionRecord? reaction)
+    private static RaxportScanRecord CreateScan(int scanNumber, int msOrder, RaxportReactionRecord? reaction)
     {
-        return new Hdf5ScanRecord(
+        return new RaxportScanRecord(
             scanNumber,
             msOrder,
             scanNumber / 10.0,
@@ -638,14 +723,14 @@ public sealed class Hdf5BufferedWriterTests
             reaction,
             new[]
             {
-                new Hdf5PeakRecord(100 + scanNumber, 200, 300, 0, 10, 2),
-                new Hdf5PeakRecord(101 + scanNumber, 201, 301, 0, 11, 3)
+                new RaxportPeakRecord(100 + scanNumber, 200, 300, 0, 10, 2),
+                new RaxportPeakRecord(101 + scanNumber, 201, 301, 0, 11, 3)
             });
     }
 
-    private static Hdf5ReactionRecord CreateReaction(double oneOverK0Begin = 0, double oneOverK0End = 0)
+    private static RaxportReactionRecord CreateReaction(double oneOverK0Begin = 0, double oneOverK0End = 0)
     {
-        return new Hdf5ReactionRecord(
+        return new RaxportReactionRecord(
             500.2,
             1.6,
             2,
@@ -659,8 +744,8 @@ public sealed class Hdf5BufferedWriterTests
             0,
             new[]
             {
-                new Hdf5PrecursorCandidateRecord(2, 500.2, 123.4),
-                new Hdf5PrecursorCandidateRecord(3, 501.2, 567.8)
+                new RaxportPrecursorCandidateRecord(2, 500.2, 123.4),
+                new RaxportPrecursorCandidateRecord(3, 501.2, 567.8)
             },
             oneOverK0Begin,
             oneOverK0End);

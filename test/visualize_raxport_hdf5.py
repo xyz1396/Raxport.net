@@ -1,7 +1,10 @@
 import argparse
+import base64
+import html
 import csv
 import math
 import random
+import zlib
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -12,6 +15,8 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
+
+pyteomics_mzml = None
 
 
 MAX_PLOT_RECORDS = 8
@@ -25,6 +30,21 @@ MOBILITY_DATASETS = [
     "precursor_candidates/one_over_k0",
 ]
 SCAN_RANGE_PATTERN = re.compile(r"\bscan=(\d+)-(\d+)\b")
+SPECTRUM_SCAN_PATTERN = re.compile(r"\bscan=(\d+)\b")
+HDF5_SUFFIXES = {".h5", ".hdf5"}
+MZML_SUFFIXES = {".mzml"}
+MZML_SUMMARY_CACHE = {}
+MZML_INDEX_CACHE = {}
+MZML_MOBILITY_AXIS_CACHE = {}
+MZML_INDEX_LIST_OFFSET_RE = re.compile(rb"<indexListOffset>(\d+)</indexListOffset>")
+MZML_OFFSET_RE = re.compile(rb'<offset idRef="([^"]+)">(\d+)</offset>')
+MZML_SPECTRUM_RE = re.compile(r'<spectrum\s+index="(\d+)"\s+id="([^"]*)"\s+defaultArrayLength="(\d+)"')
+MZML_PRECURSOR_RE = re.compile(r'<precursor\b([^>]*)>')
+MZML_CV_PARAM_RE = re.compile(r'<cvParam\b([^>]*)/?>')
+MZML_USER_PARAM_RE = re.compile(r'<userParam\b([^>]*)/?>')
+MZML_ATTR_RE = re.compile(r'([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"]*)"')
+MZML_BINARY_ARRAY_RE = re.compile(r'<binaryDataArray\b.*?</binaryDataArray>', re.DOTALL)
+MZML_BINARY_RE = re.compile(r'<binary>(.*?)</binary>', re.DOTALL)
 
 
 @dataclass
@@ -79,12 +99,13 @@ class RaxportScanRecord:
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Validate and visualize Raxport HDF5 output. The script checks the "
-            "flat scan/peak/reaction offset schema, prints MSn precursor "
-            "statistics, writes selected rows to TSV, and plots selected spectra."
+            "Validate and visualize Raxport HDF5 or indexed mzML output. The script checks "
+            "the flat HDF5 schema when applicable, prints MSn precursor statistics, "
+            "writes selected rows to TSV, and plots selected spectra."
         )
     )
-    parser.add_argument("--input", default="data/Pan_062822_X1iso5.h5", help="Raxport HDF5 file, or a directory containing .h5 files.")
+    parser.add_argument("--input", default="data/Pan_062822_X1iso5.h5", help="Raxport .h5/.hdf5/.mzML file, or a directory containing Raxport output files.")
+    parser.add_argument("--format", choices=["all", "hdf5", "mzml"], default="all", help="Input file format filter when --input is a directory. Default: all.")
     parser.add_argument("--output", default="test/raxport_hdf5_spectra_top.pdf", help="Output plot path.")
     parser.add_argument("--tsv-output", default="", help="Output TSV path. Defaults to the plot path with .tsv suffix.")
     parser.add_argument("--top-k", type=int, default=5, help="Number of scans to select; plots at most 8.")
@@ -128,16 +149,295 @@ def _read_scan_strings(scans, handle, value_name, id_name):
     return [table[int(item)] if 0 <= int(item) < len(table) else "" for item in ids]
 
 
-def _input_hdf5_paths(path):
+def _is_hdf5_path(path):
+    return path.suffix.lower() in HDF5_SUFFIXES
+
+
+def _is_mzml_path(path):
+    return path.suffix.lower() in MZML_SUFFIXES
+
+
+def _allowed_suffixes(input_format):
+    if input_format == "hdf5":
+        return HDF5_SUFFIXES
+    if input_format == "mzml":
+        return MZML_SUFFIXES
+    return HDF5_SUFFIXES | MZML_SUFFIXES
+
+
+def _input_paths(path, input_format="all"):
+    suffixes = _allowed_suffixes(input_format)
     if path.is_dir():
-        files = sorted(item for item in path.iterdir() if item.is_file() and item.suffix.lower() in {".h5", ".hdf5"})
+        files = sorted(item for item in path.iterdir() if item.is_file() and item.suffix.lower() in suffixes)
         if not files:
-            raise ValueError(f"{path}: no .h5 or .hdf5 files found")
+            suffix_text = ", ".join(sorted(suffixes))
+            raise ValueError(f"{path}: no Raxport output files found for suffixes: {suffix_text}")
         return files
-    if path.suffix.lower() not in {".h5", ".hdf5"}:
-        raise ValueError(f"{path}: expected an HDF5 file or directory")
+    if path.suffix.lower() not in suffixes:
+        suffix_text = ", ".join(sorted(suffixes))
+        raise ValueError(f"{path}: expected one of: {suffix_text}")
     return [path]
 
+
+def _input_hdf5_paths(path):
+    return _input_paths(path, "hdf5")
+
+
+def _require_mzml_reader():
+    global pyteomics_mzml
+    if pyteomics_mzml is None:
+        try:
+            from pyteomics import mzml as loaded_mzml
+        except ImportError as exc:  # pragma: no cover - fallback only
+            raise SystemExit("pyteomics is required for non-indexed mzML fallback. Install it in sipros5 with: python -m pip install pyteomics") from exc
+        pyteomics_mzml = loaded_mzml
+    return pyteomics_mzml
+
+
+
+def _mzml_attrs(text):
+    return {match.group(1): html.unescape(match.group(2)) for match in MZML_ATTR_RE.finditer(text)}
+
+
+def _to_float(value, default=None):
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value, default=0):
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return default
+
+
+def _read_mzml_index_list_offset(path):
+    file_size = path.stat().st_size
+    read_size = min(file_size, 1024 * 1024)
+    with path.open("rb") as fh:
+        while read_size <= file_size:
+            fh.seek(file_size - read_size)
+            tail = fh.read(read_size)
+            match = MZML_INDEX_LIST_OFFSET_RE.search(tail)
+            if match:
+                return int(match.group(1))
+            if read_size == file_size:
+                break
+            read_size = min(file_size, read_size * 2)
+    raise ValueError(f"{path}: missing indexed mzML indexListOffset")
+
+
+def _load_mzml_index(path):
+    path = Path(path).resolve()
+    cached = MZML_INDEX_CACHE.get(path)
+    if cached is not None:
+        return cached
+    index_list_offset = _read_mzml_index_list_offset(path)
+    entries = []
+    with path.open("rb") as fh:
+        fh.seek(index_list_offset)
+        index_blob = fh.read()
+    for match in MZML_OFFSET_RE.finditer(index_blob):
+        id_ref = html.unescape(match.group(1).decode("utf-8"))
+        if "scan=" not in id_ref:
+            continue
+        entries.append((id_ref, int(match.group(2))))
+    if not entries:
+        raise ValueError(f"{path}: no spectrum offsets found in indexed mzML indexList")
+    offset_by_index = [offset for _, offset in entries]
+    id_to_index = {spectrum_id: index for index, (spectrum_id, _) in enumerate(entries)}
+    cache = {"entries": entries, "offset_by_index": offset_by_index, "id_to_index": id_to_index}
+    MZML_INDEX_CACHE[path] = cache
+    return cache
+
+
+def _read_mzml_spectrum_prefix(fh, offset, max_bytes=131072):
+    fh.seek(offset)
+    chunks = []
+    total = 0
+    while total < max_bytes:
+        chunk = fh.read(min(8192, max_bytes - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        data = b"".join(chunks)
+        stop = data.find(b"<binaryDataArrayList")
+        if stop < 0:
+            stop = data.find(b"</spectrum>")
+        if stop >= 0:
+            return data[:stop].decode("utf-8", errors="replace")
+    raise ValueError("unable to find mzML spectrum metadata prefix before binary arrays")
+
+
+def _read_mzml_spectrum_xml(fh, offset):
+    fh.seek(offset)
+    chunks = []
+    marker = b"</spectrum>"
+    while True:
+        chunk = fh.read(1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        data = b"".join(chunks)
+        stop = data.find(marker)
+        if stop >= 0:
+            stop += len(marker)
+            return data[:stop].decode("utf-8", errors="replace")
+    raise ValueError("unable to find mzML spectrum end tag")
+
+
+def _mzml_param_map(xml_text):
+    values = {}
+    for pattern in (MZML_CV_PARAM_RE, MZML_USER_PARAM_RE):
+        for match in pattern.finditer(xml_text):
+            attrs = _mzml_attrs(match.group(1))
+            name = attrs.get("name")
+            if name:
+                values[name] = attrs.get("value", "")
+    return values
+
+
+def _fast_mzml_precursor_info(xml_text, params):
+    precursor_match = MZML_PRECURSOR_RE.search(xml_text)
+    if precursor_match is None:
+        return None
+    precursor_attrs = _mzml_attrs(precursor_match.group(1))
+    precursor_mass = _to_float(params.get("isolation window target m/z"))
+    lower_offset = _to_float(params.get("isolation window lower offset"), 0.0) or 0.0
+    upper_offset = _to_float(params.get("isolation window upper offset"), 0.0) or 0.0
+    isolation_width = lower_offset + upper_offset if lower_offset or upper_offset else None
+    charge_state = _to_int(params.get("charge state"), 0)
+    collision_energy = _to_float(params.get("collision energy"))
+    one_over_k0_begin = _to_float(params.get("one_over_k0_begin"))
+    one_over_k0_end = _to_float(params.get("one_over_k0_end"))
+
+    candidate_count_param = params.get("Raxport precursor candidate count")
+    candidate_count = _to_int(candidate_count_param, 0)
+    candidate_charge = []
+    candidate_mz = []
+    candidate_intensity = []
+    candidate_one_over_k0 = []
+    for candidate_index in range(candidate_count):
+        prefix = f"Raxport precursor candidate {candidate_index} "
+        candidate_charge.append(_to_int(params.get(prefix + "charge"), 0))
+        candidate_mz.append(_to_float(params.get(prefix + "mz"), math.nan))
+        candidate_intensity.append(_to_float(params.get(prefix + "intensity"), 0.0) or 0.0)
+        candidate_one_over_k0.append(_to_float(params.get(prefix + "one_over_k0"), math.nan))
+
+    if candidate_count_param is None and candidate_count == 0:
+        selected_mz = _to_float(params.get("selected ion m/z"))
+        if selected_mz is not None:
+            candidate_charge.append(charge_state)
+            candidate_mz.append(selected_mz)
+            candidate_intensity.append(_to_float(params.get("peak intensity"), 0.0) or 0.0)
+            candidate_one_over_k0.append(math.nan)
+
+    parent_ref = precursor_attrs.get("spectrumRef", "")
+    return {
+        "parent_ref": parent_ref,
+        "parent_scan_number": _scan_number_from_spectrum_id(parent_ref) or 0,
+        "precursor_mass": precursor_mass,
+        "isolation_width": isolation_width,
+        "one_over_k0_begin": one_over_k0_begin,
+        "one_over_k0_end": one_over_k0_end,
+        "charge_state": charge_state,
+        "collision_energy": collision_energy,
+        "candidate_charge": np.asarray(candidate_charge, dtype=int),
+        "candidate_mz": np.asarray(candidate_mz, dtype=float),
+        "candidate_intensity": np.asarray(candidate_intensity, dtype=float),
+        "candidate_one_over_k0": np.asarray(candidate_one_over_k0, dtype=float),
+    }
+
+
+def _fast_mzml_spectrum_header(xml_text, fallback_index, fallback_id):
+    match = MZML_SPECTRUM_RE.search(xml_text)
+    if match is None:
+        return fallback_index, fallback_id, 0
+    return int(match.group(1)), html.unescape(match.group(2)), int(match.group(3))
+
+
+
+def _build_mobility_axis_mapper_from_values(values_by_index):
+    if len(values_by_index) < 2:
+        return None
+    indices = np.asarray(sorted(values_by_index), dtype=float)
+    one_over_k0 = np.asarray([float(np.median(values_by_index[int(index)])) for index in indices], dtype=float)
+    order = np.argsort(indices)
+    return MobilityAxisMapper(indices=indices[order], one_over_k0=one_over_k0[order])
+
+
+def _record_mobility_axis_evidence(scan_filter, precursor):
+    if precursor is None:
+        return None
+    match = SCAN_RANGE_PATTERN.search(scan_filter or "")
+    if not match:
+        return None
+    begin = precursor.get("one_over_k0_begin")
+    end = precursor.get("one_over_k0_end")
+    if begin is None or end is None:
+        return None
+    if not (math.isfinite(float(begin)) and math.isfinite(float(end))):
+        return None
+    if float(begin) == 0.0 and float(end) == 0.0:
+        return None
+    return int(match.group(1)), float(begin), int(match.group(2)), float(end)
+
+def _decode_mzml_binary_array(block_text):
+    match = MZML_BINARY_RE.search(block_text)
+    if match is None or not match.group(1):
+        return np.asarray([], dtype=float)
+    raw = base64.b64decode(match.group(1).encode("ascii"))
+    if "zlib compression" in block_text:
+        raw = zlib.decompress(raw)
+    if not raw:
+        return np.asarray([], dtype=float)
+    return np.frombuffer(raw, dtype="<f8").copy()
+
+
+def _fast_mzml_peak_arrays(xml_text):
+    arrays = {}
+    for block_match in MZML_BINARY_ARRAY_RE.finditer(xml_text):
+        block = block_match.group(0)
+        params = _mzml_param_map(block)
+        for array_name in (
+            "m/z array",
+            "intensity array",
+            "charge array",
+            "Raxport mobility trace start array",
+            "Raxport mobility trace count array",
+            "Raxport mobility trace one_over_k0_index array",
+            "Raxport mobility trace intensity array",
+        ):
+            if array_name in params:
+                arrays[array_name] = _decode_mzml_binary_array(block)
+                break
+    mz = np.asarray(arrays.get("m/z array", []), dtype=float)
+    intensity = np.asarray(arrays.get("intensity array", []), dtype=float)
+    if intensity.size != mz.size:
+        intensity = np.resize(intensity, mz.size).astype(float) if intensity.size else np.zeros(mz.size, dtype=float)
+    charge_values = arrays.get("charge array")
+    if charge_values is None:
+        charge = np.zeros(mz.size, dtype=int)
+    else:
+        charge = np.asarray(charge_values, dtype=float)
+        if charge.size != mz.size:
+            charge = np.resize(charge, mz.size).astype(float) if charge.size else np.zeros(mz.size, dtype=float)
+        charge = np.rint(charge).astype(int)
+    trace_start = np.rint(np.asarray(arrays.get("Raxport mobility trace start array", []), dtype=float)).astype(np.int64)
+    trace_count = np.rint(np.asarray(arrays.get("Raxport mobility trace count array", []), dtype=float)).astype(np.int64)
+    trace_one_over_k0_index = np.rint(np.asarray(arrays.get("Raxport mobility trace one_over_k0_index array", []), dtype=float)).astype(int)
+    trace_intensity = np.asarray(arrays.get("Raxport mobility trace intensity array", []), dtype=float)
+    return mz, intensity, charge, trace_start, trace_count, trace_one_over_k0_index, trace_intensity
 
 def _format_value(value):
     if value is None:
@@ -374,10 +674,263 @@ def load_hdf5_records(path, ms_order_filter=0):
     return records
 
 
-def load_records(path, ms_order_filter=0):
+
+def _as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _child_list(container, key):
+    if not isinstance(container, dict):
+        return []
+    return _as_list(container.get(key))
+
+
+def _first_child(container, list_key, child_key):
+    lists = _child_list(container, list_key)
+    if not lists:
+        return {}
+    return _child_list(lists[0], child_key)[0] if _child_list(lists[0], child_key) else {}
+
+
+def _mzml_raw_value(container, key, default=None):
+    if not isinstance(container, dict):
+        return default
+    value = container.get(key, default)
+    if isinstance(value, dict) and "value" in value:
+        value = value["value"]
+    if isinstance(value, list) and value:
+        value = value[0]
+    return value
+
+
+def _mzml_float(container, key, default=None):
+    value = _mzml_raw_value(container, key, default)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _mzml_int(container, key, default=0):
+    value = _mzml_raw_value(container, key, default)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return default
+
+
+def _mzml_str(container, key, default=""):
+    value = _mzml_raw_value(container, key, default)
+    if value is None:
+        return default
+    return str(value)
+
+
+def _scan_number_from_spectrum_id(spectrum_id):
+    if not spectrum_id:
+        return None
+    match = SPECTRUM_SCAN_PATTERN.search(str(spectrum_id))
+    return int(match.group(1)) if match else None
+
+
+def _mzml_scan_info(spectrum):
+    scan = _first_child(spectrum, "scanList", "scan")
+    return (
+        _mzml_float(scan, "scan start time", 0.0) or 0.0,
+        _mzml_str(scan, "filter string", ""),
+    )
+
+
+def _mzml_precursor_info(spectrum):
+    precursors = _child_list(spectrum.get("precursorList", {}), "precursor")
+    if not precursors:
+        return None
+    precursor = precursors[0]
+    isolation_window = _child_list(precursor, "isolationWindow")
+    isolation_window = isolation_window[0] if isolation_window else {}
+    selected_ion = _first_child(precursor, "selectedIonList", "selectedIon")
+    activation = _child_list(precursor, "activation")
+    activation = activation[0] if activation else {}
+
+    precursor_mass = _mzml_float(isolation_window, "isolation window target m/z")
+    lower_offset = _mzml_float(isolation_window, "isolation window lower offset", 0.0) or 0.0
+    upper_offset = _mzml_float(isolation_window, "isolation window upper offset", 0.0) or 0.0
+    isolation_width = lower_offset + upper_offset if lower_offset or upper_offset else None
+    charge_state = _mzml_int(selected_ion, "charge state", 0)
+    collision_energy = _mzml_float(activation, "collision energy")
+    one_over_k0_begin = _mzml_float(isolation_window, "one_over_k0_begin")
+    one_over_k0_end = _mzml_float(isolation_window, "one_over_k0_end")
+
+    candidate_count_param = _mzml_raw_value(selected_ion, "Raxport precursor candidate count")
+    candidate_count = _mzml_int(selected_ion, "Raxport precursor candidate count", 0)
+    candidate_charge = []
+    candidate_mz = []
+    candidate_intensity = []
+    candidate_one_over_k0 = []
+    for candidate_index in range(candidate_count):
+        prefix = f"Raxport precursor candidate {candidate_index} "
+        candidate_charge.append(_mzml_int(selected_ion, prefix + "charge", 0))
+        candidate_mz.append(_mzml_float(selected_ion, prefix + "mz", math.nan))
+        candidate_intensity.append(_mzml_float(selected_ion, prefix + "intensity", 0.0) or 0.0)
+        candidate_one_over_k0.append(_mzml_float(selected_ion, prefix + "one_over_k0", math.nan))
+
+    if candidate_count_param is None and candidate_count == 0:
+        selected_mz = _mzml_float(selected_ion, "selected ion m/z")
+        if selected_mz is not None:
+            candidate_charge.append(charge_state)
+            candidate_mz.append(selected_mz)
+            candidate_intensity.append(_mzml_float(selected_ion, "peak intensity", 0.0) or 0.0)
+            candidate_one_over_k0.append(math.nan)
+
+    parent_ref = _mzml_str(precursor, "spectrumRef", "")
+    parent_scan_number = _scan_number_from_spectrum_id(parent_ref) or 0
+    return {
+        "parent_ref": parent_ref,
+        "parent_scan_number": parent_scan_number,
+        "precursor_mass": precursor_mass,
+        "isolation_width": isolation_width,
+        "one_over_k0_begin": one_over_k0_begin,
+        "one_over_k0_end": one_over_k0_end,
+        "charge_state": charge_state,
+        "collision_energy": collision_energy,
+        "candidate_charge": np.asarray(candidate_charge, dtype=int),
+        "candidate_mz": np.asarray(candidate_mz, dtype=float),
+        "candidate_intensity": np.asarray(candidate_intensity, dtype=float),
+        "candidate_one_over_k0": np.asarray(candidate_one_over_k0, dtype=float),
+    }
+
+
+
+
+def _empty_mzml_summary():
+    return {
+        "ms_orders": [],
+        "precursor_masses": [],
+        "charge_states": [],
+        "candidate_counts": [],
+        "one_over_k0_begin": [],
+        "one_over_k0_end": [],
+        "candidate_one_over_k0": [],
+        "msn_scan_count": 0,
+        "msn_with_reaction_count": 0,
+    }
+
+
+def _update_mzml_summary(summary, ms_order, precursor):
+    summary["ms_orders"].append(int(ms_order))
+    if ms_order <= 1:
+        return
+    summary["msn_scan_count"] += 1
+    if precursor is None:
+        return
+    summary["msn_with_reaction_count"] += 1
+    if precursor["precursor_mass"] is not None:
+        summary["precursor_masses"].append(precursor["precursor_mass"])
+    summary["charge_states"].append(precursor["charge_state"] or 0)
+    summary["candidate_counts"].append(int(precursor["candidate_mz"].size))
+    for key in ("one_over_k0_begin", "one_over_k0_end"):
+        value = precursor[key]
+        if value is not None:
+            summary[key].append(value)
+    if precursor["candidate_one_over_k0"].size:
+        summary["candidate_one_over_k0"].extend(precursor["candidate_one_over_k0"].tolist())
+
+
+
+def load_mzml_records(path, ms_order_filter=0):
+    path = Path(path).resolve()
+    index = _load_mzml_index(path)
+    id_to_index = index["id_to_index"]
     records = []
-    for hdf5_path in _input_hdf5_paths(path):
-        records.extend(load_hdf5_records(hdf5_path, ms_order_filter))
+    summary = _empty_mzml_summary()
+    mobility_axis_values_by_index = defaultdict(list)
+    with path.open("rb") as fh:
+        for source_index, (indexed_id, offset) in enumerate(index["entries"]):
+            prefix_xml = _read_mzml_spectrum_prefix(fh, offset)
+            _, spectrum_id, peak_count = _fast_mzml_spectrum_header(prefix_xml, source_index, indexed_id)
+            params = _mzml_param_map(prefix_xml)
+            ms_order = _to_int(params.get("ms level"), 1)
+            precursor = _fast_mzml_precursor_info(prefix_xml, params) if ms_order > 1 else None
+            scan_filter = params.get("filter string", "")
+            axis_evidence = _record_mobility_axis_evidence(scan_filter, precursor)
+            if axis_evidence is not None:
+                begin_index, begin_k0, end_index, end_k0 = axis_evidence
+                mobility_axis_values_by_index[begin_index].append(begin_k0)
+                mobility_axis_values_by_index[end_index].append(end_k0)
+            _update_mzml_summary(summary, ms_order, precursor)
+            if ms_order <= 1:
+                continue
+            if ms_order_filter > 0 and ms_order != ms_order_filter:
+                continue
+
+            if precursor is None:
+                precursor = {
+                    "parent_ref": "", "parent_scan_number": 0, "precursor_mass": None, "isolation_width": None,
+                    "one_over_k0_begin": None, "one_over_k0_end": None, "charge_state": 0, "collision_energy": None,
+                    "candidate_charge": np.asarray([], dtype=int), "candidate_mz": np.asarray([], dtype=float),
+                    "candidate_intensity": np.asarray([], dtype=float), "candidate_one_over_k0": np.asarray([], dtype=float),
+                }
+            parent_source_index = id_to_index.get(precursor["parent_ref"])
+            candidate_k0 = precursor["candidate_one_over_k0"]
+            has_candidate_k0 = candidate_k0.size and np.any(np.isfinite(candidate_k0) & (candidate_k0 != 0.0))
+            has_window_k0 = any(value not in (None, 0.0) for value in (precursor["one_over_k0_begin"], precursor["one_over_k0_end"]))
+            records.append(RaxportScanRecord(
+                source_path=path,
+                source_file=path.name,
+                source_index=source_index,
+                parent_source_index=parent_source_index,
+                reaction_index=0 if precursor["precursor_mass"] is not None else None,
+                scan_number=_scan_number_from_spectrum_id(spectrum_id) or source_index,
+                ms_order=ms_order,
+                retention_time=_to_float(params.get("scan start time"), 0.0) or 0.0,
+                tic=_to_float(params.get("total ion current"), 0.0) or 0.0,
+                scan_filter=scan_filter,
+                activation="",
+                parent_scan_number=int(precursor["parent_scan_number"]),
+                precursor_mass=precursor["precursor_mass"],
+                isolation_width=precursor["isolation_width"],
+                one_over_k0_begin=precursor["one_over_k0_begin"],
+                one_over_k0_end=precursor["one_over_k0_end"],
+                charge_state=precursor["charge_state"],
+                collision_energy=precursor["collision_energy"],
+                candidate_charge=precursor["candidate_charge"],
+                candidate_mz=precursor["candidate_mz"],
+                candidate_intensity=precursor["candidate_intensity"],
+                candidate_one_over_k0=precursor["candidate_one_over_k0"],
+                peak_count=peak_count,
+                parent_peak_mz=np.asarray([], dtype=float),
+                parent_peak_intensity=np.asarray([], dtype=float),
+                parent_peak_charge=np.asarray([], dtype=int),
+                parent_mobility_mz=np.asarray([], dtype=float),
+                parent_mobility_one_over_k0=np.asarray([], dtype=float),
+                parent_mobility_intensity=np.asarray([], dtype=float),
+                peak_mz=np.asarray([], dtype=float),
+                peak_intensity=np.asarray([], dtype=float),
+                peak_charge=np.asarray([], dtype=int),
+                has_mobility=bool(has_candidate_k0 or has_window_k0),
+            ))
+    MZML_SUMMARY_CACHE[path] = summary
+    MZML_MOBILITY_AXIS_CACHE[path] = _build_mobility_axis_mapper_from_values(mobility_axis_values_by_index)
+    return records
+
+def load_records(path, ms_order_filter=0, input_format="all"):
+    records = []
+    for input_file in _input_paths(path, input_format):
+        if _is_mzml_path(input_file):
+            records.extend(load_mzml_records(input_file, ms_order_filter))
+        else:
+            records.extend(load_hdf5_records(input_file, ms_order_filter))
     return records
 
 
@@ -430,7 +983,8 @@ def _load_parent_mobility(handle, parent_peak_mz, parent_peak_start, parent_peak
     return mobility_mz[finite], mobility_one_over_k0[finite], mobility_intensity[finite]
 
 
-def hydrate_records(records):
+
+def hydrate_hdf5_records(records):
     by_path = defaultdict(list)
     for record in records:
         by_path[record.source_path].append(record)
@@ -463,6 +1017,102 @@ def hydrate_records(records):
                     )
     return records
 
+
+
+def _load_mzml_spectra_by_index(path, indices):
+    path = Path(path).resolve()
+    wanted = {int(index) for index in indices if index is not None}
+    if not wanted:
+        return {}
+    index = _load_mzml_index(path)
+    offsets = index["offset_by_index"]
+    missing = [item for item in wanted if item < 0 or item >= len(offsets)]
+    if missing:
+        raise ValueError(f"{path}: mzML spectrum indexes are out of range: {missing[:8]}")
+    spectra = {}
+    with path.open("rb") as fh:
+        for source_index in sorted(wanted):
+            spectrum_xml = _read_mzml_spectrum_xml(fh, offsets[source_index])
+            spectra[source_index] = _fast_mzml_peak_arrays(spectrum_xml)
+    return spectra
+
+
+def _expand_mzml_parent_mobility(parent_peak_mz, trace_start, trace_count, trace_one_over_k0_index, trace_intensity, mapper):
+    empty = np.asarray([], dtype=float)
+    if mapper is None or parent_peak_mz.size == 0 or trace_start.size == 0 or trace_count.size == 0:
+        return empty, empty, empty
+    count = min(parent_peak_mz.size, trace_start.size, trace_count.size)
+    starts = np.asarray(trace_start[:count], dtype=np.int64)
+    counts = np.asarray(trace_count[:count], dtype=np.int64)
+    valid = (starts >= 0) & (counts > 0)
+    if not valid.any():
+        return empty, empty, empty
+    trace_total = min(trace_one_over_k0_index.size, trace_intensity.size)
+    valid &= (starts + counts) <= trace_total
+    if not valid.any():
+        return empty, empty, empty
+    total = int(np.sum(counts[valid]))
+    mobility_mz = np.empty(total, dtype=float)
+    mobility_index = np.empty(total, dtype=int)
+    mobility_intensity = np.empty(total, dtype=float)
+    out = 0
+    for peak_index in np.flatnonzero(valid):
+        start = int(starts[peak_index])
+        point_count = int(counts[peak_index])
+        stop = start + point_count
+        next_out = out + point_count
+        mobility_mz[out:next_out] = float(parent_peak_mz[peak_index])
+        mobility_index[out:next_out] = trace_one_over_k0_index[start:stop]
+        mobility_intensity[out:next_out] = trace_intensity[start:stop]
+        out = next_out
+    mobility_one_over_k0 = mapper.map(mobility_index)
+    finite = np.isfinite(mobility_one_over_k0) & np.isfinite(mobility_intensity)
+    return mobility_mz[finite], mobility_one_over_k0[finite], mobility_intensity[finite]
+
+def hydrate_mzml_records(records):
+    by_path = defaultdict(list)
+    for record in records:
+        by_path[record.source_path].append(record)
+    for path, path_records in by_path.items():
+        needed = set()
+        for record in path_records:
+            needed.add(record.source_index)
+            if record.parent_source_index is not None:
+                needed.add(record.parent_source_index)
+        spectra = _load_mzml_spectra_by_index(path, needed)
+        mapper = MZML_MOBILITY_AXIS_CACHE.get(Path(path).resolve())
+        for record in path_records:
+            peak_mz, peak_intensity, peak_charge, _, _, _, _ = spectra[record.source_index]
+            record.peak_mz = peak_mz
+            record.peak_intensity = peak_intensity
+            record.peak_charge = peak_charge
+            record.peak_count = int(peak_mz.size)
+            if record.parent_source_index is not None:
+                parent_mz, parent_intensity, parent_charge, parent_trace_start, parent_trace_count, parent_trace_index, parent_trace_intensity = spectra[record.parent_source_index]
+                record.parent_peak_mz = parent_mz
+                record.parent_peak_intensity = parent_intensity
+                record.parent_peak_charge = parent_charge
+                if record.has_mobility:
+                    record.parent_mobility_mz, record.parent_mobility_one_over_k0, record.parent_mobility_intensity = _expand_mzml_parent_mobility(
+                        parent_mz,
+                        parent_trace_start,
+                        parent_trace_count,
+                        parent_trace_index,
+                        parent_trace_intensity,
+                        mapper,
+                    )
+    return records
+
+
+def hydrate_records(records):
+    by_format = defaultdict(list)
+    for record in records:
+        by_format["mzml" if _is_mzml_path(record.source_path) else "hdf5"].append(record)
+    if by_format["hdf5"]:
+        hydrate_hdf5_records(by_format["hdf5"])
+    if by_format["mzml"]:
+        hydrate_mzml_records(by_format["mzml"])
+    return records
 
 def _sample_records(records, sample_size, seed):
     if sample_size == 0 or len(records) <= sample_size:
@@ -1158,7 +1808,8 @@ def _write_selected_tsv(records, output_path, tolerance_ppm):
     return row_count
 
 
-def _print_file_summary(path):
+
+def _print_hdf5_file_summary(path):
     with h5py.File(path, "r") as handle:
         validate_hdf5_file(path)
         attrs = {key: _decode_hdf5_scalar_string(value) for key, value in handle.attrs.items()}
@@ -1171,6 +1822,7 @@ def _print_file_summary(path):
         charge_state = handle["reactions/charge_state"][reaction_rows] if reaction_rows.size else np.asarray([])
         candidate_count = handle["reactions/candidate_count"][reaction_rows] if reaction_rows.size else np.asarray([])
         print(f"file={path}")
+        print("format=hdf5")
         print(f"attrs={attrs}")
         print(f"mobility_supported={has_mobility}")
         print(f"total_scans={len(ms_order)}")
@@ -1185,6 +1837,41 @@ def _print_file_summary(path):
             print(_stats_text("one_over_k0_end", handle["reactions/one_over_k0_end"][reaction_rows]))
             print(_stats_text("candidate_one_over_k0", handle["precursor_candidates/one_over_k0"][:]))
 
+
+
+def _print_mzml_summary_values(path, summary):
+    one_over_k0_values = summary["one_over_k0_begin"] + summary["one_over_k0_end"] + summary["candidate_one_over_k0"]
+    has_mobility = any(value not in (None, 0.0) and math.isfinite(float(value)) for value in one_over_k0_values)
+    ms_orders = summary["ms_orders"]
+    print(f"file={path}")
+    print("format=mzml")
+    print(f"mobility_supported={has_mobility}")
+    print(f"total_scans={len(ms_orders)}")
+    print(f"ms_order_counts={dict(sorted(Counter(map(int, ms_orders)).items()))}")
+    print(f"msn_scan_count={summary['msn_scan_count']}")
+    print(f"msn_with_reaction_count={summary['msn_with_reaction_count']}")
+    print(_stats_text("precursor_mass", summary["precursor_masses"]))
+    print(f"charge_state_counts={dict(sorted(Counter(map(int, summary['charge_states'])).items()))}")
+    print(_stats_text("candidate_count", summary["candidate_counts"]))
+    if has_mobility:
+        print(_stats_text("one_over_k0_begin", summary["one_over_k0_begin"]))
+        print(_stats_text("one_over_k0_end", summary["one_over_k0_end"]))
+        print(_stats_text("candidate_one_over_k0", summary["candidate_one_over_k0"]))
+
+
+def _print_mzml_file_summary(path):
+    path = Path(path).resolve()
+    summary = MZML_SUMMARY_CACHE.get(path)
+    if summary is None:
+        _ = load_mzml_records(path, 0)
+        summary = MZML_SUMMARY_CACHE[path]
+    _print_mzml_summary_values(path, summary)
+
+def _print_file_summary(path):
+    if _is_mzml_path(path):
+        _print_mzml_file_summary(path)
+    else:
+        _print_hdf5_file_summary(path)
 
 def main():
     args = parse_args()
@@ -1203,10 +1890,14 @@ def main():
         raise SystemExit("--mz-min must be smaller than --mz-max.")
     if not input_path.exists():
         raise SystemExit(f"Input path not found: {input_path}")
-    input_hdf5_paths = _input_hdf5_paths(input_path)
-    for hdf5_path in input_hdf5_paths:
-        _print_file_summary(hdf5_path)
-    records = load_records(input_path, args.ms_order)
+    input_files = _input_paths(input_path, args.format)
+    records = []
+    for input_file in input_files:
+        if _is_mzml_path(input_file):
+            records.extend(load_mzml_records(input_file, args.ms_order))
+        else:
+            records.extend(load_hdf5_records(input_file, args.ms_order))
+        _print_file_summary(input_file)
     if not records:
         raise SystemExit(f"No MSn scans found in {input_path}")
     selected = _select_records(records, args)
@@ -1216,7 +1907,8 @@ def main():
     plotted_count = _plot_records(selected, input_path, output_path, args)
     tsv_row_count = _write_selected_tsv(selected, tsv_output_path, args.mz_tolerance_ppm)
     print(f"input_path={input_path}")
-    print(f"input_hdf5_files={len(input_hdf5_paths)}")
+    print(f"input_files={len(input_files)}")
+    print(f"input_format_filter={args.format}")
     print(f"valid_msn_records={len(records)}")
     print(f"selected_records={len(selected)}")
     print(f"plotted_records={plotted_count}")
