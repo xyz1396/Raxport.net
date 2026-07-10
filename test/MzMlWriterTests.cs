@@ -50,7 +50,7 @@ public sealed class MzMlWriterTests
                     new RaxportReactionRecord(
                         500.2,
                         1.6,
-                        3,
+                        4,
                         35,
                         true,
                         "HigherEnergyCollisionalDissociation",
@@ -61,8 +61,8 @@ public sealed class MzMlWriterTests
                         0,
                         new[]
                         {
-                            new RaxportPrecursorCandidateRecord(3, 500.2, 12345.0, 1.11),
-                            new RaxportPrecursorCandidateRecord(2, 501.2, 23456.0, 1.22)
+                            new RaxportPrecursorCandidateRecord(3, 500.2, 12345.0, 1.11, RaxportPrecursorChargeSource.Isotope, 3),
+                            new RaxportPrecursorCandidateRecord(2, 501.2, 23456.0, 1.22, RaxportPrecursorChargeSource.Fallback, 0)
                         },
                         1.05,
                         1.15),
@@ -138,10 +138,83 @@ public sealed class MzMlWriterTests
             AssertUserParam(selectedIon, "Raxport precursor candidate 0 mz", "500.2");
             AssertUserParam(selectedIon, "Raxport precursor candidate 0 intensity", "12345");
             AssertUserParam(selectedIon, "Raxport precursor candidate 0 one_over_k0", "1.11");
+            AssertUserParam(selectedIon, "Raxport precursor candidate 0 charge_source", "Isotope");
+            AssertUserParam(selectedIon, "Raxport precursor candidate 0 isotope_match_count", "3");
             AssertUserParam(selectedIon, "Raxport precursor candidate 1 charge", "2");
             AssertUserParam(selectedIon, "Raxport precursor candidate 1 mz", "501.2");
             AssertUserParam(selectedIon, "Raxport precursor candidate 1 intensity", "23456");
             AssertUserParam(selectedIon, "Raxport precursor candidate 1 one_over_k0", "1.22");
+            AssertUserParam(selectedIon, "Raxport precursor candidate 1 charge_source", "Fallback");
+            AssertUserParam(selectedIon, "Raxport precursor candidate 1 isotope_match_count", "0");
+            AssertUserParam(selectedIon, "Raxport reported precursor charge", "4");
+            XElement selectedCharge = selectedIon.Elements(Ns + "cvParam")
+                .Single(param => (string?)param.Attribute("accession") == "MS:1000041");
+            Assert.AreEqual("3", selectedCharge.Attribute("value")!.Value);
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [TestMethod]
+    public void WritesReportedZeroSeparatelyFromFallbackCandidateCharge()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            "raxport-mzml-zero-" + Guid.NewGuid().ToString("N") + ".mzML");
+        try
+        {
+            using (MzMlWriter writer = new(path, "sample.d", "timsTOF", "test-version"))
+            {
+                writer.AddScan(new RaxportScanRecord(
+                    20,
+                    2,
+                    2.0,
+                    100,
+                    "ms2",
+                    "CollisionInducedDissociation",
+                    0,
+                    new RaxportReactionRecord(
+                        600.0,
+                        2.0,
+                        0,
+                        0,
+                        false,
+                        "CollisionInducedDissociation",
+                        false,
+                        false,
+                        0,
+                        0,
+                        0,
+                        new[]
+                        {
+                            new RaxportPrecursorCandidateRecord(
+                                2,
+                                600.1,
+                                5000,
+                                1.2,
+                                RaxportPrecursorChargeSource.Fallback,
+                                0)
+                        }),
+                    new[] { new RaxportPeakRecord(150.0, 100, 0, 0, 0, 0) },
+                    true,
+                    100,
+                    1000,
+                    "Positive"));
+            }
+
+            XDocument document = XDocument.Load(path);
+            XElement selectedIon = document
+                .Descendants(Ns + "selectedIon")
+                .Single();
+            AssertUserParam(selectedIon, "Raxport reported precursor charge", "0");
+            XElement selectedCharge = selectedIon.Elements(Ns + "cvParam")
+                .Single(param => (string?)param.Attribute("accession") == "MS:1000041");
+            Assert.AreEqual("2", selectedCharge.Attribute("value")!.Value);
         }
         finally
         {

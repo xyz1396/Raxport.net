@@ -45,6 +45,14 @@ MZML_USER_PARAM_RE = re.compile(r'<userParam\b([^>]*)/?>')
 MZML_ATTR_RE = re.compile(r'([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"]*)"')
 MZML_BINARY_ARRAY_RE = re.compile(r'<binaryDataArray\b.*?</binaryDataArray>', re.DOTALL)
 MZML_BINARY_RE = re.compile(r'<binary>(.*?)</binary>', re.DOTALL)
+CHARGE_SOURCE_NAMES = {
+    0: "Unknown",
+    1: "Peak",
+    2: "Reported",
+    3: "Isotope",
+    4: "Fallback",
+}
+CHARGE_SOURCE_IDS = {name.casefold(): value for value, name in CHARGE_SOURCE_NAMES.items()}
 
 
 @dataclass
@@ -80,6 +88,8 @@ class RaxportScanRecord:
     charge_state: int | None
     collision_energy: float | None
     candidate_charge: np.ndarray
+    candidate_charge_source: np.ndarray
+    candidate_isotope_match_count: np.ndarray
     candidate_mz: np.ndarray
     candidate_intensity: np.ndarray
     candidate_one_over_k0: np.ndarray
@@ -220,6 +230,21 @@ def _to_int(value, default=0):
             return default
 
 
+def _charge_source_id(value):
+    if value is None:
+        return 0
+    text = str(value).strip()
+    named_value = CHARGE_SOURCE_IDS.get(text.casefold())
+    if named_value is not None:
+        return named_value
+    numeric_value = _to_int(value, 0)
+    return numeric_value if numeric_value in CHARGE_SOURCE_NAMES else 0
+
+
+def _charge_source_name(value):
+    return CHARGE_SOURCE_NAMES.get(_charge_source_id(value), "Unknown")
+
+
 def _read_mzml_index_list_offset(path):
     file_size = path.stat().st_size
     read_size = min(file_size, 1024 * 1024)
@@ -260,22 +285,22 @@ def _load_mzml_index(path):
     return cache
 
 
-def _read_mzml_spectrum_prefix(fh, offset, max_bytes=131072):
+def _read_mzml_spectrum_prefix(fh, offset):
     fh.seek(offset)
-    chunks = []
-    total = 0
-    while total < max_bytes:
-        chunk = fh.read(min(8192, max_bytes - total))
+    data = bytearray()
+    markers = (b"<binaryDataArrayList", b"</spectrum>")
+    search_start = 0
+    overlap = max(len(marker) for marker in markers) - 1
+    while True:
+        chunk = fh.read(65536)
         if not chunk:
             break
-        chunks.append(chunk)
-        total += len(chunk)
-        data = b"".join(chunks)
-        stop = data.find(b"<binaryDataArrayList")
-        if stop < 0:
-            stop = data.find(b"</spectrum>")
-        if stop >= 0:
-            return data[:stop].decode("utf-8", errors="replace")
+        data.extend(chunk)
+        stops = [data.find(marker, search_start) for marker in markers]
+        stops = [stop for stop in stops if stop >= 0]
+        if stops:
+            return data[:min(stops)].decode("utf-8", errors="replace")
+        search_start = max(0, len(data) - overlap)
     raise ValueError("unable to find mzML spectrum metadata prefix before binary arrays")
 
 
@@ -316,7 +341,8 @@ def _fast_mzml_precursor_info(xml_text, params):
     lower_offset = _to_float(params.get("isolation window lower offset"), 0.0) or 0.0
     upper_offset = _to_float(params.get("isolation window upper offset"), 0.0) or 0.0
     isolation_width = lower_offset + upper_offset if lower_offset or upper_offset else None
-    charge_state = _to_int(params.get("charge state"), 0)
+    selected_charge_state = _to_int(params.get("charge state"), 0)
+    charge_state = _to_int(params.get("Raxport reported precursor charge"), selected_charge_state)
     collision_energy = _to_float(params.get("collision energy"))
     one_over_k0_begin = _to_float(params.get("one_over_k0_begin"))
     one_over_k0_end = _to_float(params.get("one_over_k0_end"))
@@ -324,12 +350,16 @@ def _fast_mzml_precursor_info(xml_text, params):
     candidate_count_param = params.get("Raxport precursor candidate count")
     candidate_count = _to_int(candidate_count_param, 0)
     candidate_charge = []
+    candidate_charge_source = []
+    candidate_isotope_match_count = []
     candidate_mz = []
     candidate_intensity = []
     candidate_one_over_k0 = []
     for candidate_index in range(candidate_count):
         prefix = f"Raxport precursor candidate {candidate_index} "
         candidate_charge.append(_to_int(params.get(prefix + "charge"), 0))
+        candidate_charge_source.append(_charge_source_id(params.get(prefix + "charge_source")))
+        candidate_isotope_match_count.append(_to_int(params.get(prefix + "isotope_match_count"), 0))
         candidate_mz.append(_to_float(params.get(prefix + "mz"), math.nan))
         candidate_intensity.append(_to_float(params.get(prefix + "intensity"), 0.0) or 0.0)
         candidate_one_over_k0.append(_to_float(params.get(prefix + "one_over_k0"), math.nan))
@@ -337,7 +367,9 @@ def _fast_mzml_precursor_info(xml_text, params):
     if candidate_count_param is None and candidate_count == 0:
         selected_mz = _to_float(params.get("selected ion m/z"))
         if selected_mz is not None:
-            candidate_charge.append(charge_state)
+            candidate_charge.append(selected_charge_state)
+            candidate_charge_source.append(0)
+            candidate_isotope_match_count.append(0)
             candidate_mz.append(selected_mz)
             candidate_intensity.append(_to_float(params.get("peak intensity"), 0.0) or 0.0)
             candidate_one_over_k0.append(math.nan)
@@ -353,6 +385,8 @@ def _fast_mzml_precursor_info(xml_text, params):
         "charge_state": charge_state,
         "collision_energy": collision_energy,
         "candidate_charge": np.asarray(candidate_charge, dtype=int),
+        "candidate_charge_source": np.asarray(candidate_charge_source, dtype=int),
+        "candidate_isotope_match_count": np.asarray(candidate_isotope_match_count, dtype=int),
         "candidate_mz": np.asarray(candidate_mz, dtype=float),
         "candidate_intensity": np.asarray(candidate_intensity, dtype=float),
         "candidate_one_over_k0": np.asarray(candidate_one_over_k0, dtype=float),
@@ -544,6 +578,9 @@ def _validate_offsets(handle, path):
         raise ValueError(f"{path}: scan reaction offsets exceed /reactions row count")
 
     candidate_total = handle["precursor_candidates/mz"].shape[0]
+    for name in ("charge", "intensity", "one_over_k0", "charge_source", "isotope_match_count"):
+        if name in handle["precursor_candidates"] and handle[f"precursor_candidates/{name}"].shape[0] != candidate_total:
+            raise ValueError(f"{path}: precursor_candidates/{name} row count differs from m/z")
     candidate_start = handle["reactions/candidate_start"][:].astype(np.int64)
     candidate_count = handle["reactions/candidate_count"][:].astype(np.int64)
     if candidate_start.size and int(np.max(candidate_start + candidate_count)) > candidate_total:
@@ -625,6 +662,8 @@ def load_hdf5_records(path, ms_order_filter=0):
         candidate_count = reactions["candidate_count"][:].astype(np.int64)
         candidate_charge = candidates["charge"][:].astype(int)
         candidate_mz = candidates["mz"][:].astype(float)
+        candidate_charge_source = candidates["charge_source"][:].astype(int) if "charge_source" in candidates else np.zeros(candidate_mz.shape[0], dtype=int)
+        candidate_isotope_match_count = candidates["isotope_match_count"][:].astype(int) if "isotope_match_count" in candidates else np.zeros(candidate_mz.shape[0], dtype=int)
         candidate_intensity = candidates["intensity"][:].astype(float) if "intensity" in candidates else np.zeros(candidate_mz.shape[0], dtype=float)
         candidate_one_over_k0 = candidates["one_over_k0"][:].astype(float) if "one_over_k0" in candidates else np.full(candidate_mz.shape[0], np.nan, dtype=float)
 
@@ -636,6 +675,8 @@ def load_hdf5_records(path, ms_order_filter=0):
 
             precursor = width = one_over_k0_begin = one_over_k0_end = charge = energy = reaction_index = None
             cand_charge_array = np.asarray([], dtype=int)
+            cand_charge_source_array = np.asarray([], dtype=int)
+            cand_isotope_match_count_array = np.asarray([], dtype=int)
             cand_mz_array = np.asarray([], dtype=float)
             cand_intensity_array = np.asarray([], dtype=float)
             cand_one_over_k0_array = np.asarray([], dtype=float)
@@ -654,6 +695,8 @@ def load_hdf5_records(path, ms_order_filter=0):
                 c_start = int(candidate_start[reaction_index])
                 c_stop = c_start + int(candidate_count[reaction_index])
                 cand_charge_array = np.asarray(candidate_charge[c_start:c_stop], dtype=int)
+                cand_charge_source_array = np.asarray(candidate_charge_source[c_start:c_stop], dtype=int)
+                cand_isotope_match_count_array = np.asarray(candidate_isotope_match_count[c_start:c_stop], dtype=int)
                 cand_mz_array = np.asarray(candidate_mz[c_start:c_stop], dtype=float)
                 cand_intensity_array = np.asarray(candidate_intensity[c_start:c_stop], dtype=float)
                 cand_one_over_k0_array = np.asarray(candidate_one_over_k0[c_start:c_stop], dtype=float)
@@ -666,6 +709,7 @@ def load_hdf5_records(path, ms_order_filter=0):
                 activation=activation[index], parent_scan_number=int(parent_scan_number[index]), precursor_mass=precursor,
                 isolation_width=width, one_over_k0_begin=one_over_k0_begin, one_over_k0_end=one_over_k0_end,
                 charge_state=charge, collision_energy=energy, candidate_charge=cand_charge_array, candidate_mz=cand_mz_array,
+                candidate_charge_source=cand_charge_source_array, candidate_isotope_match_count=cand_isotope_match_count_array,
                 candidate_intensity=cand_intensity_array, candidate_one_over_k0=cand_one_over_k0_array, peak_count=int(peak_count[index]),
                 parent_peak_mz=np.asarray([], dtype=float), parent_peak_intensity=np.asarray([], dtype=float), parent_peak_charge=np.asarray([], dtype=int),
                 parent_mobility_mz=np.asarray([], dtype=float), parent_mobility_one_over_k0=np.asarray([], dtype=float), parent_mobility_intensity=np.asarray([], dtype=float),
@@ -767,7 +811,8 @@ def _mzml_precursor_info(spectrum):
     lower_offset = _mzml_float(isolation_window, "isolation window lower offset", 0.0) or 0.0
     upper_offset = _mzml_float(isolation_window, "isolation window upper offset", 0.0) or 0.0
     isolation_width = lower_offset + upper_offset if lower_offset or upper_offset else None
-    charge_state = _mzml_int(selected_ion, "charge state", 0)
+    selected_charge_state = _mzml_int(selected_ion, "charge state", 0)
+    charge_state = _mzml_int(selected_ion, "Raxport reported precursor charge", selected_charge_state)
     collision_energy = _mzml_float(activation, "collision energy")
     one_over_k0_begin = _mzml_float(isolation_window, "one_over_k0_begin")
     one_over_k0_end = _mzml_float(isolation_window, "one_over_k0_end")
@@ -775,12 +820,16 @@ def _mzml_precursor_info(spectrum):
     candidate_count_param = _mzml_raw_value(selected_ion, "Raxport precursor candidate count")
     candidate_count = _mzml_int(selected_ion, "Raxport precursor candidate count", 0)
     candidate_charge = []
+    candidate_charge_source = []
+    candidate_isotope_match_count = []
     candidate_mz = []
     candidate_intensity = []
     candidate_one_over_k0 = []
     for candidate_index in range(candidate_count):
         prefix = f"Raxport precursor candidate {candidate_index} "
         candidate_charge.append(_mzml_int(selected_ion, prefix + "charge", 0))
+        candidate_charge_source.append(_charge_source_id(_mzml_raw_value(selected_ion, prefix + "charge_source")))
+        candidate_isotope_match_count.append(_mzml_int(selected_ion, prefix + "isotope_match_count", 0))
         candidate_mz.append(_mzml_float(selected_ion, prefix + "mz", math.nan))
         candidate_intensity.append(_mzml_float(selected_ion, prefix + "intensity", 0.0) or 0.0)
         candidate_one_over_k0.append(_mzml_float(selected_ion, prefix + "one_over_k0", math.nan))
@@ -788,7 +837,9 @@ def _mzml_precursor_info(spectrum):
     if candidate_count_param is None and candidate_count == 0:
         selected_mz = _mzml_float(selected_ion, "selected ion m/z")
         if selected_mz is not None:
-            candidate_charge.append(charge_state)
+            candidate_charge.append(selected_charge_state)
+            candidate_charge_source.append(0)
+            candidate_isotope_match_count.append(0)
             candidate_mz.append(selected_mz)
             candidate_intensity.append(_mzml_float(selected_ion, "peak intensity", 0.0) or 0.0)
             candidate_one_over_k0.append(math.nan)
@@ -805,6 +856,8 @@ def _mzml_precursor_info(spectrum):
         "charge_state": charge_state,
         "collision_energy": collision_energy,
         "candidate_charge": np.asarray(candidate_charge, dtype=int),
+        "candidate_charge_source": np.asarray(candidate_charge_source, dtype=int),
+        "candidate_isotope_match_count": np.asarray(candidate_isotope_match_count, dtype=int),
         "candidate_mz": np.asarray(candidate_mz, dtype=float),
         "candidate_intensity": np.asarray(candidate_intensity, dtype=float),
         "candidate_one_over_k0": np.asarray(candidate_one_over_k0, dtype=float),
@@ -879,6 +932,7 @@ def load_mzml_records(path, ms_order_filter=0):
                     "parent_ref": "", "parent_scan_number": 0, "precursor_mass": None, "isolation_width": None,
                     "one_over_k0_begin": None, "one_over_k0_end": None, "charge_state": 0, "collision_energy": None,
                     "candidate_charge": np.asarray([], dtype=int), "candidate_mz": np.asarray([], dtype=float),
+                    "candidate_charge_source": np.asarray([], dtype=int), "candidate_isotope_match_count": np.asarray([], dtype=int),
                     "candidate_intensity": np.asarray([], dtype=float), "candidate_one_over_k0": np.asarray([], dtype=float),
                 }
             parent_source_index = id_to_index.get(precursor["parent_ref"])
@@ -905,6 +959,8 @@ def load_mzml_records(path, ms_order_filter=0):
                 charge_state=precursor["charge_state"],
                 collision_energy=precursor["collision_energy"],
                 candidate_charge=precursor["candidate_charge"],
+                candidate_charge_source=precursor["candidate_charge_source"],
+                candidate_isotope_match_count=precursor["candidate_isotope_match_count"],
                 candidate_mz=precursor["candidate_mz"],
                 candidate_intensity=precursor["candidate_intensity"],
                 candidate_one_over_k0=precursor["candidate_one_over_k0"],
@@ -1707,13 +1763,20 @@ def _join_ints(values):
     return ",".join(str(int(value)) for value in values)
 
 
-def _guessed_candidate_charges(candidate_charges, parent_peak_charge, reaction_charge):
+def _join_charge_sources(values):
+    return ",".join(_charge_source_name(value) for value in values)
+
+
+def _guessed_candidate_charges(candidate_charges, candidate_charge_sources, parent_peak_charge, reaction_charge):
+    normalized_sources = [_charge_source_id(source) for source in candidate_charge_sources]
+    if any(source != 0 for source in normalized_sources):
+        return sorted({int(charge) for charge, source in zip(candidate_charges, normalized_sources) if source == 4})
     known_charges = set()
     if parent_peak_charge not in (None, 0):
         known_charges.add(int(parent_peak_charge))
     elif reaction_charge not in (None, 0):
         known_charges.add(int(reaction_charge))
-    return [charge for charge in candidate_charges if int(charge) not in known_charges]
+    return sorted({int(charge) for charge in candidate_charges if int(charge) not in known_charges})
 
 
 def _deduplicated_precursor_rows(record, tolerance_ppm):
@@ -1722,19 +1785,23 @@ def _deduplicated_precursor_rows(record, tolerance_ppm):
     for candidate_index, candidate_mz in enumerate(record.candidate_mz):
         parent_peak_index = parent_peak_indices[candidate_index]
         key = ("parent", int(parent_peak_index)) if parent_peak_index >= 0 else ("candidate", round(float(candidate_mz), 6))
-        group = grouped.setdefault(key, {"candidate_mz": [], "candidate_charge": [], "candidate_intensity": [], "candidate_one_over_k0": [], "parent_peak_index": parent_peak_index})
+        group = grouped.setdefault(key, {"candidate_mz": [], "candidate_charge": [], "candidate_charge_source": [], "candidate_isotope_match_count": [], "candidate_intensity": [], "candidate_one_over_k0": [], "parent_peak_index": parent_peak_index})
         group["candidate_mz"].append(float(candidate_mz))
         group["candidate_charge"].append(int(record.candidate_charge[candidate_index]))
-        if candidate_index < record.candidate_intensity.size:
-            group["candidate_intensity"].append(float(record.candidate_intensity[candidate_index]))
-        if candidate_index < record.candidate_one_over_k0.size:
-            group["candidate_one_over_k0"].append(float(record.candidate_one_over_k0[candidate_index]))
+        group["candidate_charge_source"].append(int(record.candidate_charge_source[candidate_index]) if candidate_index < record.candidate_charge_source.size else 0)
+        group["candidate_isotope_match_count"].append(int(record.candidate_isotope_match_count[candidate_index]) if candidate_index < record.candidate_isotope_match_count.size else 0)
+        group["candidate_intensity"].append(
+            float(record.candidate_intensity[candidate_index])
+            if candidate_index < record.candidate_intensity.size else math.nan)
+        group["candidate_one_over_k0"].append(
+            float(record.candidate_one_over_k0[candidate_index])
+            if candidate_index < record.candidate_one_over_k0.size else math.nan)
         if group["parent_peak_index"] < 0 and parent_peak_index >= 0:
             group["parent_peak_index"] = parent_peak_index
     rows = []
     for group in grouped.values():
         candidate_mz_values = group["candidate_mz"]
-        candidate_charges = sorted(set(group["candidate_charge"]))
+        candidate_charges = group["candidate_charge"]
         parent_peak_index = group["parent_peak_index"]
         if parent_peak_index >= 0:
             parent_peak_mz = float(record.parent_peak_mz[parent_peak_index])
@@ -1756,6 +1823,8 @@ def _deduplicated_precursor_rows(record, tolerance_ppm):
             "charge": parent_peak_charge if parent_peak_charge not in (None, 0) else "",
             "candidate_mz": _join_formatted(candidate_mz_values),
             "candidate_charge": _join_ints(candidate_charges),
+            "candidate_charge_source": _join_charge_sources(group["candidate_charge_source"]),
+            "candidate_isotope_match_count": _join_ints(group["candidate_isotope_match_count"]),
             "candidate_intensity": _join_formatted(group["candidate_intensity"]),
             "candidate_one_over_k0": _join_formatted(group["candidate_one_over_k0"]),
             "parent_peak_mz": parent_peak_mz,
@@ -1763,7 +1832,7 @@ def _deduplicated_precursor_rows(record, tolerance_ppm):
             "parent_peak_charge": parent_peak_charge if parent_peak_charge is not None else "",
             "parent_peak_delta_mz": _join_formatted(delta_mz_values),
             "parent_peak_delta_ppm": _join_formatted(delta_ppm_values),
-            "guessed_charge": _join_ints(_guessed_candidate_charges(candidate_charges, parent_peak_charge, record.charge_state)),
+            "guessed_charge": _join_ints(_guessed_candidate_charges(group["candidate_charge"], group["candidate_charge_source"], parent_peak_charge, record.charge_state)),
         })
     return rows
 
@@ -1772,7 +1841,7 @@ def _write_selected_tsv(records, output_path, tolerance_ppm):
     fieldnames = [
         "record_rank", "source_file", "scan_number", "ms_order", "retention_time", "tic", "parent_scan_number",
         "precursor_mass", "isolation_width", "one_over_k0_begin", "one_over_k0_end", "charge_state", "collision_energy",
-        "row_kind", "row_index", "mz", "intensity", "charge", "candidate_mz", "candidate_charge", "candidate_intensity", "candidate_one_over_k0",
+        "row_kind", "row_index", "mz", "intensity", "charge", "candidate_mz", "candidate_charge", "candidate_charge_source", "candidate_isotope_match_count", "candidate_intensity", "candidate_one_over_k0",
         "parent_peak_mz", "parent_peak_intensity", "parent_peak_charge", "parent_peak_delta_mz", "parent_peak_delta_ppm", "guessed_charge", "match_tolerance_ppm",
     ]
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1793,6 +1862,7 @@ def _write_selected_tsv(records, output_path, tolerance_ppm):
                 row.update({
                     "row_kind": "precursor_candidate", "row_index": row_index, "mz": _format_value(precursor_row["mz"]), "intensity": _format_value(precursor_row["intensity"]),
                     "charge": precursor_row["charge"], "candidate_mz": precursor_row["candidate_mz"], "candidate_charge": precursor_row["candidate_charge"],
+                    "candidate_charge_source": precursor_row["candidate_charge_source"], "candidate_isotope_match_count": precursor_row["candidate_isotope_match_count"],
                     "candidate_intensity": precursor_row["candidate_intensity"], "candidate_one_over_k0": precursor_row["candidate_one_over_k0"],
                     "parent_peak_mz": _format_value(precursor_row["parent_peak_mz"]), "parent_peak_intensity": _format_value(precursor_row["parent_peak_intensity"]),
                     "parent_peak_charge": precursor_row["parent_peak_charge"], "parent_peak_delta_mz": precursor_row["parent_peak_delta_mz"],

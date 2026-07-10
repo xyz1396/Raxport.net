@@ -87,21 +87,28 @@ Options:
 | `-p N` | `2` | HDF5 peak flush units. One unit is 10,000,000 peak rows, so `-p 2` flushes at about 20,000,000 buffered peak rows. |
 | `--hdf5-compression-level N` | `1` | HDF5 gzip compression level 0-9. `0` disables compression, lower levels write faster, and `6` preserves the earlier smaller-output behavior. |
 | `--format FORMAT` | `hdf5` | Output format: `hdf5`/`h5` or indexed `mzml`/`indexed-mzml`. |
-| `-n N` | `15` | Maximum precursor candidates stored for each MSn scan. |
+| `-n N` | `15` | Maximum isotope-envelope apex m/z values selected per MSn scan; uncertain envelopes can expand to fallback charges 2, 3, and 4 plus isotope-supported alternatives. |
 | `--mz-tolerance-ppm PPM` | `10` | Precursor m/z matching tolerance in ppm. |
+| `--precursor-intensity-fraction F` | `0.99` | Cumulative isotope-envelope intensity fraction retained per MSn scan; must be greater than 0 and at most 1. |
 | `-m` | off | Merge adjacent MS1 scans. |
 | `-h` | off | Print command help and exit. |
 
 Each input produces one `.h5` output file by default. With `--format mzml`, each input produces one indexed `.mzML` file. Bruker archive names strip `.zip` and `.d`, so `sample.d.zip` produces `sample.h5` by default or `sample.mzML` with mzML output.
 
+### Precursor envelope selection
+
+For each MSn isolation window, Raxport projects parent-MS1 evidence into the applicable mobility range, groups contiguous isotope peaks using `1.003355 / charge` spacing, and retains the most intense observed in-window isotope (the envelope apex) as the precursor candidate m/z. Other isotopes in that envelope are excluded from candidate selection. Envelopes are ranked by summed envelope intensity, while each candidate keeps its apex intensity.
+
+Charge resolution uses a trusted MS1 peak charge first, then a trusted instrument-reported charge only for the target envelope, then a confident bidirectional isotope pattern. When tied or weak patterns remain, all equally best isotope hypotheses are conservatively collapsed into one apex. Uncertain envelopes expand to every isotope-supported fallback charge first, followed by unsupported defaults from 2, 3, and 4. Candidate `charge_source` and the per-charge `isotope_match_count` distinguish these cases from the separate instrument-reported `/reactions/charge_state`.
+
 ### Generated HDF5 file structure
 
-Each output file uses HDF5 schema version 5. The root object has these attributes:
+Each output file uses HDF5 schema version 6. The root object has these attributes:
 
-- `schema_version`: integer schema version, currently `5`
+- `schema_version`: integer schema version, currently `6`
 - `raxport_version`: Raxport version that generated the file
 - `source_raw_file`: original RAW file path
-- `instrument_model`: ThermoFisher instrument model
+- `instrument_model`: instrument model reported by the source data
 
 Datasets are one-dimensional, appendable, chunked, shuffled, and deflate-compressed. Related datasets in the same group have the same row count and are read by matching row index.
 
@@ -113,7 +120,7 @@ flowchart TD
     root --> peaks["/peaks<br/>mz, intensity, resolution<br/>baseline, noise, charge<br/>mobility_trace_start, mobility_trace_count"]
     root --> traces["/peak_mobility_traces<br/>one_over_k0_index, intensity"]
     root --> reactions["/reactions<br/>precursor_mass, isolation_width, charge_state<br/>collision_energy, collision_energy_valid<br/>activation_type_id, multiple_activation<br/>precursor_range_valid<br/>first_precursor_mass, last_precursor_mass<br/>isolation_width_offset<br/>one_over_k0_begin, one_over_k0_end<br/>candidate_start, candidate_count"]
-    root --> candidates["/precursor_candidates<br/>charge, mz, intensity, one_over_k0"]
+    root --> candidates["/precursor_candidates<br/>charge, mz, intensity, one_over_k0<br/>charge_source, isotope_match_count"]
     root --> strings["/string_tables<br/>scan_filter<br/>activation<br/>reaction_activation_type"]
 
     scans -- "peak_start + peak_count" --> peaks
@@ -132,7 +139,7 @@ Raxport uses HDF5 gzip compression level 1 by default to favor conversion throug
 
 The `/peak_mobility_traces` group stores flat parallel `one_over_k0_index` and `intensity` arrays for Bruker TDF MS1 peaks. Trace intensities come from `tims_read_scans_v2` peaks matched to the collapsed centroid m/z using `--mz-tolerance-ppm`.
 
-The `/reactions` group stores precursor and activation metadata for MSn scans. `candidate_start` and `candidate_count` select rows from `/precursor_candidates`, which stores the expanded precursor charge, m/z, candidate intensity, and strongest in-window 1/K0 candidate when available. String-valued fields are normalized through `/string_tables`: scan filters, scan activations, and reaction activation types are stored once and referenced by integer IDs.
+The `/reactions` group stores instrument-reported precursor and activation metadata for MSn scans. `candidate_start` and `candidate_count` select rows from `/precursor_candidates`, which stores the selected isotope-envelope apex m/z, apex intensity, resolved or fallback charge, strongest in-window 1/K0, charge provenance, and isotope match count. `charge_source` values are `0=Unknown`, `1=Peak`, `2=Reported`, `3=Isotope`, and `4=Fallback`. String-valued fields are normalized through `/string_tables`: scan filters, scan activations, and reaction activation types are stored once and referenced by integer IDs.
 
 ### Project dependencies
 

@@ -69,7 +69,7 @@ public sealed class Hdf5WriterTests
 
 
     [TestMethod]
-    public void PrecursorSelectorThermoTrailerChargeDoesNotDriveIsotopeRemoval()
+    public void PrecursorSelectorThermoTrailerChargeOnlyAppliesToItsTargetEnvelope()
     {
         RaxportPeakRecord[] peaks =
         {
@@ -78,26 +78,27 @@ public sealed class Hdf5WriterTests
             new(502.000000, 800, 0, 0, 0, 0)
         };
 
-        int trailerCharge = 4;
-        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.0, 4.0, 2, 1.0, 10);
-        List<RaxportPeakRecord> evidence = PrecursorSelector.GetPrecursorEvidencePeaks(peaks, 501.0, 4.0, 10);
-        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
-            selected,
-            evidence,
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            peaks,
+            peaks,
             501.0,
-            4.0,
             2,
+            1.0,
             10,
-            trailerCharge);
+            reportedTargetCharge: 4);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 2, 10);
 
         Assert.AreEqual(2, selected.Count);
-        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
-        Assert.AreEqual(502.000000, selected[1].Mz, 0.0001);
+        Assert.AreEqual(500.000000, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(502.000000, selected[1].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(0, selected[0].ResolvedCharge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Unknown, selected[0].ChargeSource);
         Assert.AreEqual(2, candidates[0].Charge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Fallback, candidates[0].ChargeSource);
     }
 
     [TestMethod]
-    public void PrecursorSelectorLimitsSelectionPoolByTopNMultiplier()
+    public void PrecursorSelectorRefillsAfterCollapsingEnvelope()
     {
         RaxportPeakRecord[] peaks =
         {
@@ -110,8 +111,35 @@ public sealed class Hdf5WriterTests
 
         List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
 
-        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(2, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
+        Assert.AreEqual(503.000000, selected[1].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    [Timeout(5000)]
+    public void PrecursorSelectorHandlesLargeSingletonEvidenceWithoutQuadraticCopies()
+    {
+        RaxportPeakRecord[] peaks = Enumerable.Range(0, 5000)
+            .Select(index => new RaxportPeakRecord(
+                100.0 + index * 11.123,
+                5000 - index,
+                0,
+                0,
+                0,
+                0))
+            .ToArray();
+
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            peaks,
+            peaks,
+            100.0,
+            1,
+            1.0,
+            10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(100.0, selected[0].ApexPeak.Mz, 0.0001);
     }
 
     [TestMethod]
@@ -137,15 +165,15 @@ public sealed class Hdf5WriterTests
         RaxportPeakRecord[] peaks =
         {
             new(500.0, 1000, 0, 0, 0, 0),
-            new(501.0, 900, 0, 0, 0, 0),
-            new(502.0, 800, 0, 0, 0, 0),
-            new(503.0, 700, 0, 0, 0, 0)
+            new(501.2, 900, 0, 0, 0, 0),
+            new(502.4, 800, 0, 0, 0, 0),
+            new(503.6, 700, 0, 0, 0, 0)
         };
 
         List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 501.5, 5.0, 2, 1.0, 10);
 
         Assert.AreEqual(2, selected.Count);
-        CollectionAssert.AreEqual(new[] { 500.0, 501.0 }, selected.Select(peak => peak.Mz).ToArray());
+        CollectionAssert.AreEqual(new[] { 500.0, 501.2 }, selected.Select(peak => peak.Mz).ToArray());
     }
 
     [TestMethod]
@@ -205,7 +233,67 @@ public sealed class Hdf5WriterTests
     }
 
     [TestMethod]
-    public void PrecursorSelectorUsesDefaultGuessWhenThermoChargeIsMissing()
+    public void PrecursorSelectorKeepsEnvelopeApexAndExcludesOtherIsotopes()
+    {
+        RaxportPeakRecord[] peaks =
+        {
+            new(500.000000, 600, 0, 0, 0, 0),
+            new(500.501678, 1000, 0, 0, 0, 0),
+            new(501.003355, 800, 0, 0, 0, 0)
+        };
+
+        List<RaxportPeakRecord> evidence = PrecursorSelector.GetPrecursorEvidencePeaks(peaks, 500.5, 2.0, 10);
+        List<RaxportPeakRecord> isotopeEvidence = PrecursorSelector.GetIsotopeEvidencePeaks(peaks, 500.5, 2.0, 10);
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            evidence,
+            isotopeEvidence,
+            500.5,
+            3,
+            1.0,
+            10);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 3, 10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(500.501678, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(2400, selected[0].EnvelopeIntensity, 0.0001);
+        Assert.AreEqual(2, selected[0].ResolvedCharge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Isotope, selected[0].ChargeSource);
+        Assert.AreEqual(2, selected[0].IsotopeMatchCount);
+        Assert.AreEqual(1, candidates.Count);
+        Assert.AreEqual(500.501678, candidates[0].Mz, 0.0001);
+        Assert.AreEqual(2, candidates[0].Charge);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesReportedChargeOnlyForTargetEnvelope()
+    {
+        RaxportPeakRecord[] peaks =
+        {
+            new(600.000000, 500, 0, 0, 0, 0),
+            new(600.334452, 1000, 0, 0, 0, 0),
+            new(600.668903, 800, 0, 0, 0, 0),
+            new(601.200000, 900, 0, 0, 0, 0)
+        };
+
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            peaks,
+            peaks,
+            600.0,
+            2,
+            1.0,
+            10,
+            reportedTargetCharge: 3);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(600.334452, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(3, selected[0].ResolvedCharge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Reported, selected[0].ChargeSource);
+        Assert.AreEqual(601.200000, selected[1].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(0, selected[1].ResolvedCharge);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorUsesStrongIsotopeChargeWhenThermoChargeIsMissing()
     {
         RaxportPeakRecord[] peaks =
         {
@@ -228,11 +316,13 @@ public sealed class Hdf5WriterTests
 
         Assert.AreEqual(1, selected.Count);
         Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
-        Assert.AreEqual(2, candidates[0].Charge);
+        Assert.AreEqual(3, candidates[0].Charge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Isotope, candidates[0].ChargeSource);
+        Assert.AreEqual(3, candidates[0].IsotopeMatchCount);
     }
 
     [TestMethod]
-    public void PrecursorSelectorUsesConservativeFallbackChargeOrder()
+    public void PrecursorSelectorCollapsesAllBestWeakIsotopeHypotheses()
     {
         RaxportPeakRecord[] peaks =
         {
@@ -241,11 +331,141 @@ public sealed class Hdf5WriterTests
             new(500.334452, 800, 0, 0, 0, 0)
         };
 
-        List<RaxportPeakRecord> selected = PrecursorSelector.FindPrecursorPeaks(peaks, 500.5, 2.0, 2, 1.0, 10);
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            peaks,
+            peaks,
+            500.5,
+            2,
+            1.0,
+            10);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 2, 10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(2700, selected[0].EnvelopeIntensity, 0.0001);
+        Assert.AreEqual(0, selected[0].ResolvedCharge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Unknown, selected[0].ChargeSource);
+        Assert.AreEqual(0, selected[0].IsotopeMatchCount);
+        CollectionAssert.AreEqual(new[] { 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
+        Assert.IsTrue(candidates.All(candidate => candidate.ChargeSource == RaxportPrecursorChargeSource.Fallback));
+        CollectionAssert.AreEqual(new[] { 1, 1, 0 }, candidates.Select(candidate => candidate.IsotopeMatchCount).ToArray());
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorCollapsesWeakChargeOneAndHighChargeEnvelopesAtApex()
+    {
+        foreach (int charge in new[] { 1, 5, 6, 7 })
+        {
+            double isotopeMz = 700.0 + 1.003355 / charge;
+            RaxportPeakRecord[] peaks =
+            {
+                new(700.0, 600, 0, 0, 0, 0),
+                new(isotopeMz, 1000, 0, 0, 0, 0)
+            };
+
+            List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+                peaks,
+                peaks,
+                700.5,
+                2,
+                1.0,
+                10);
+            List<RaxportPrecursorCandidateRecord> candidates =
+                PrecursorSelector.ExpandPrecursorCandidates(selected, 2, 10);
+
+            Assert.AreEqual(1, selected.Count);
+            Assert.AreEqual(isotopeMz, selected[0].ApexPeak.Mz, 0.000001);
+            Assert.AreEqual(1600, selected[0].EnvelopeIntensity, 0.0001);
+            Assert.AreEqual(0, selected[0].ResolvedCharge);
+            Assert.AreEqual(0, selected[0].IsotopeMatchCount);
+            CollectionAssert.AreEqual(
+                new[] { charge, 2, 3, 4 },
+                candidates.Select(candidate => candidate.Charge).ToArray());
+            Assert.AreEqual(RaxportPrecursorChargeSource.Fallback, candidates[0].ChargeSource);
+            Assert.AreEqual(1, candidates[0].IsotopeMatchCount);
+        }
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorDoesNotReuseClaimedExtendedIsotopeEvidence()
+    {
+        RaxportPeakRecord[] selectionEvidence =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.668903, 900, 0, 0, 0, 0)
+        };
+        RaxportPeakRecord[] isotopeEvidence =
+        {
+            selectionEvidence[0],
+            new(500.501678, 100, 0, 0, 0, 0),
+            selectionEvidence[1],
+            new(501.003355, 100, 0, 0, 0, 0),
+            new(501.337807, 100, 0, 0, 0, 0)
+        };
+
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            selectionEvidence,
+            isotopeEvidence,
+            500.0,
+            2,
+            1.0,
+            10);
 
         Assert.AreEqual(2, selected.Count);
-        Assert.AreEqual(500.000000, selected[0].Mz, 0.0001);
-        Assert.AreEqual(500.334452, selected[1].Mz, 0.0001);
+        Assert.AreEqual(500.000000, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(2, selected[0].ResolvedCharge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Isotope, selected[0].ChargeSource);
+        Assert.AreEqual(500.668903, selected[1].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(0, selected[1].ResolvedCharge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Unknown, selected[1].ChargeSource);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorInfersChargeFromBackwardIsotopes()
+    {
+        RaxportPeakRecord[] peaks =
+        {
+            new(500.000000, 700, 0, 0, 0, 0),
+            new(500.334452, 800, 0, 0, 0, 0),
+            new(500.668903, 1000, 0, 0, 0, 0)
+        };
+
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            peaks,
+            peaks,
+            500.4,
+            3,
+            1.0,
+            10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(500.668903, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(3, selected[0].ResolvedCharge);
+        Assert.AreEqual(2, selected[0].IsotopeMatchCount);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorRanksByEnvelopeIntensityBeforeApexIntensity()
+    {
+        RaxportPeakRecord[] peaks =
+        {
+            new(600.000000, 1000, 0, 0, 0, 0),
+            new(600.501678, 900, 0, 0, 0, 0),
+            new(601.003355, 800, 0, 0, 0, 0),
+            new(603.000000, 1100, 0, 0, 0, 0)
+        };
+
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            peaks,
+            peaks,
+            601.5,
+            1,
+            1.0,
+            10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(600.000000, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(2700, selected[0].EnvelopeIntensity, 0.0001);
     }
 
     [TestMethod]
@@ -290,6 +510,24 @@ public sealed class Hdf5WriterTests
         Assert.AreEqual(2, stopped.Count);
         Assert.AreEqual(501.003355, stopped[0].Mz, 0.0001);
         Assert.AreEqual(500.000000, stopped[1].Mz, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorIgnoresTargetlessReportedCharge()
+    {
+        RaxportPeakRecord[] selected =
+        {
+            new(600.0, 1000, 0, 0, 0, 0),
+            new(601.2, 900, 0, 0, 0, 0)
+        };
+
+        List<RaxportPrecursorCandidateRecord> candidates =
+            PrecursorSelector.ExpandPrecursorCandidates(selected, 2, preferredCharge: 5);
+
+        CollectionAssert.AreEqual(
+            new[] { 2, 3, 4, 2, 3, 4 },
+            candidates.Select(candidate => candidate.Charge).ToArray());
+        Assert.IsTrue(candidates.All(candidate => candidate.ChargeSource == RaxportPrecursorChargeSource.Fallback));
     }
 
     [TestMethod]
@@ -485,7 +723,7 @@ public sealed class Hdf5WriterTests
     }
 
     [TestMethod]
-    public void PrecursorSelectorUsesDefaultGuessInsteadOfStrongIsotopeCharge()
+    public void PrecursorSelectorUsesStrongIsotopeChargeForCandidate()
     {
         RaxportPeakRecord[] evidence =
         {
@@ -504,7 +742,9 @@ public sealed class Hdf5WriterTests
             1,
             10);
 
-        Assert.AreEqual(2, candidates[0].Charge);
+        Assert.AreEqual(3, candidates[0].Charge);
+        Assert.AreEqual(RaxportPrecursorChargeSource.Isotope, candidates[0].ChargeSource);
+        Assert.AreEqual(3, candidates[0].IsotopeMatchCount);
     }
 
     [TestMethod]
@@ -533,7 +773,36 @@ public sealed class Hdf5WriterTests
     }
 
     [TestMethod]
-    public void PrecursorSelectorUsesDefaultGuessInsteadOfWeakIsotopeCharge()
+    public void PrecursorSelectorFallsBackAndCollapsesWhenStrongIsotopeChargesAreAmbiguous()
+    {
+        RaxportPeakRecord[] evidence =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.250839, 800, 0, 0, 0, 0),
+            new(500.501678, 700, 0, 0, 0, 0),
+            new(501.003355, 500, 0, 0, 0, 0)
+        };
+
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            evidence,
+            evidence,
+            500.0,
+            4,
+            1.0,
+            10);
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(selected, 4, 10);
+
+        Assert.AreEqual(1, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(3000, selected[0].EnvelopeIntensity, 0.0001);
+        Assert.AreEqual(0, selected[0].ResolvedCharge);
+        CollectionAssert.AreEqual(new[] { 2, 4, 1, 3 }, candidates.Select(candidate => candidate.Charge).ToArray());
+        Assert.IsTrue(candidates.All(candidate => candidate.ChargeSource == RaxportPrecursorChargeSource.Fallback));
+        CollectionAssert.AreEqual(new[] { 2, 2, 1, 0 }, candidates.Select(candidate => candidate.IsotopeMatchCount).ToArray());
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorPrioritizesWeakIsotopeSupportedChargeBeforeDefaults()
     {
         RaxportPeakRecord[] evidence =
         {
@@ -550,7 +819,60 @@ public sealed class Hdf5WriterTests
             1,
             10);
 
-        Assert.AreEqual(2, candidates[0].Charge);
+        CollectionAssert.AreEqual(new[] { 5, 2, 3, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
+        Assert.AreEqual(RaxportPrecursorChargeSource.Fallback, candidates[0].ChargeSource);
+        Assert.AreEqual(1, candidates[0].IsotopeMatchCount);
+        Assert.IsTrue(candidates.Skip(1).All(candidate => candidate.IsotopeMatchCount == 0));
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorDoesNotCollapseSubBestFallbackHypotheses()
+    {
+        RaxportPeakRecord[] evidence =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.334452, 900, 0, 0, 0, 0),
+            new(501.003355, 800, 0, 0, 0, 0),
+            new(502.006710, 700, 0, 0, 0, 0)
+        };
+
+        List<RaxportSelectedPrecursorRecord> selected = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
+            evidence,
+            evidence,
+            501.0,
+            4,
+            1.0,
+            10);
+
+        Assert.AreEqual(2, selected.Count);
+        Assert.AreEqual(500.000000, selected[0].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(2500, selected[0].EnvelopeIntensity, 0.0001);
+        Assert.AreEqual(500.334452, selected[1].ApexPeak.Mz, 0.0001);
+        Assert.AreEqual(900, selected[1].EnvelopeIntensity, 0.0001);
+    }
+
+    [TestMethod]
+    public void PrecursorSelectorReportsPerChargeFallbackIsotopeMatches()
+    {
+        RaxportPeakRecord[] evidence =
+        {
+            new(500.000000, 1000, 0, 0, 0, 0),
+            new(500.334452, 700, 0, 0, 0, 0),
+            new(501.003355, 600, 0, 0, 0, 0),
+            new(502.006710, 500, 0, 0, 0, 0)
+        };
+
+        List<RaxportPrecursorCandidateRecord> candidates = PrecursorSelector.ExpandPrecursorCandidates(
+            new[] { evidence[0] },
+            evidence,
+            500.0,
+            3.0,
+            1,
+            10);
+
+        CollectionAssert.AreEqual(new[] { 1, 3, 2, 4 }, candidates.Select(candidate => candidate.Charge).ToArray());
+        CollectionAssert.AreEqual(new[] { 2, 1, 0, 0 }, candidates.Select(candidate => candidate.IsotopeMatchCount).ToArray());
+        Assert.IsTrue(candidates.All(candidate => candidate.ChargeSource == RaxportPrecursorChargeSource.Fallback));
     }
 
     [TestMethod]
@@ -581,7 +903,7 @@ public sealed class Hdf5WriterTests
             selected,
             600.0,
             1.0,
-            1,
+             2,
             10,
             preferredCharge: 2);
 
@@ -677,10 +999,66 @@ public sealed class Hdf5WriterTests
         Assert.AreEqual(2, peaks.Count);
         Assert.AreEqual(1000, peaks[0].Intensity, 0.0001, "Peak row intensity should remain the collapsed v3 area.");
         Assert.AreEqual(1, peaks[0].MobilityTrace!.Count, "Zero-intensity matched points should not be stored.");
-        Assert.AreEqual(10, peaks[0].MobilityTrace.OneOverK0Indices[0]);
-        Assert.AreEqual(25, peaks[0].MobilityTrace.Intensities[0], 0.0001);
+        Assert.AreEqual(10, peaks[0].MobilityTrace!.OneOverK0Indices[0]);
+        Assert.AreEqual(25, peaks[0].MobilityTrace!.Intensities[0], 0.0001);
         Assert.AreEqual(11, peaks[1].MobilityTrace!.OneOverK0Indices[0]);
-        Assert.AreEqual(40, peaks[1].MobilityTrace.Intensities[0], 0.0001);
+        Assert.AreEqual(40, peaks[1].MobilityTrace!.Intensities[0], 0.0001);
+    }
+
+    [TestMethod]
+    public void BrukerMobilityTraceMatchingHandlesDuplicateAndUnorderedScans()
+    {
+        RaxportPeakRecord[] centroids =
+        {
+            new(500.0000, 1000, 0, 0, 0, 0),
+            new(501.0000, 2000, 0, 0, 0, 0)
+        };
+        BrukerRawScan[] rawScans =
+        {
+            new(12, new uint[] { 1, 2 }, new uint[] { 7, 5 }),
+            new(10, new uint[] { 3 }, new uint[] { 3 }),
+            new(12, new uint[] { 4 }, new uint[] { 11 })
+        };
+        double[][] mzByScan =
+        {
+            new[] { 501.0002, 500.0003 },
+            new[] { 500.0001 },
+            new[] { 500.0004 }
+        };
+
+        List<RaxportPeakRecord> peaks = BrukerTimsReader.BuildMobilityTracePeaks(
+            centroids,
+            rawScans,
+            mzByScan,
+            new double[13],
+            10,
+            out int omittedCentroids);
+
+        Assert.AreEqual(0, omittedCentroids);
+        Assert.AreEqual(2, peaks.Count);
+        RaxportPeakMobilityTrace firstTrace = peaks[0].MobilityTrace!;
+        RaxportPeakMobilityTrace secondTrace = peaks[1].MobilityTrace!;
+        CollectionAssert.AreEqual(new[] { 10, 12 }, firstTrace.OneOverK0Indices);
+        Assert.AreEqual(3, firstTrace.Intensities[0], 0.0001);
+        Assert.AreEqual(16, firstTrace.Intensities[1], 0.0001);
+        CollectionAssert.AreEqual(new[] { 12 }, secondTrace.OneOverK0Indices);
+        Assert.AreEqual(7, secondTrace.Intensities[0], 0.0001);
+    }
+
+    [TestMethod]
+    public void BrukerParentUseCountsReleaseOnlyAfterLastReference()
+    {
+        Dictionary<long, int> useCounts = BrukerRawFileConverter.BuildParentUseCounts(
+            new long?[] { 10, null, 10, 20 });
+
+        Assert.AreEqual(2, useCounts[10]);
+        Assert.AreEqual(1, useCounts[20]);
+        Assert.IsFalse(BrukerRawFileConverter.ConsumeParentUse(useCounts, 10));
+        Assert.AreEqual(1, useCounts[10]);
+        Assert.IsTrue(BrukerRawFileConverter.ConsumeParentUse(useCounts, 10));
+        Assert.IsFalse(useCounts.ContainsKey(10));
+        Assert.IsTrue(BrukerRawFileConverter.ConsumeParentUse(useCounts, 20));
+        Assert.IsFalse(BrukerRawFileConverter.ConsumeParentUse(useCounts, null));
     }
 
     [TestMethod]
@@ -744,8 +1122,8 @@ public sealed class Hdf5WriterTests
             0,
             new[]
             {
-                new RaxportPrecursorCandidateRecord(2, 500.2, 123.4),
-                new RaxportPrecursorCandidateRecord(3, 501.2, 567.8)
+                new RaxportPrecursorCandidateRecord(2, 500.2, 123.4, 0, RaxportPrecursorChargeSource.Isotope, 3),
+                new RaxportPrecursorCandidateRecord(3, 501.2, 567.8, 0, RaxportPrecursorChargeSource.Fallback, 0)
             },
             oneOverK0Begin,
             oneOverK0End);
@@ -767,7 +1145,7 @@ public sealed class Hdf5WriterTests
         process.StartInfo.ArgumentList.Add(
             @"import h5py, math, sys
 with h5py.File(sys.argv[1], 'r') as f:
-    if int(f.attrs['schema_version']) != 5:
+    if int(f.attrs['schema_version']) != 6:
         raise SystemExit('unexpected schema_version: %s' % f.attrs['schema_version'])
     if '/peaks/one_over_k0' in f:
         raise SystemExit('peaks/one_over_k0 should not exist')
@@ -815,6 +1193,12 @@ with h5py.File(sys.argv[1], 'r') as f:
     intensity = f['/precursor_candidates/intensity'][:].tolist()
     if any(abs(a - b) > 1e-6 for a, b in zip(intensity, [123.4, 567.8])):
         raise SystemExit(f'unexpected precursor candidate intensity: {intensity}')
+    charge_source = f['/precursor_candidates/charge_source'][:].astype(int).tolist()
+    isotope_matches = f['/precursor_candidates/isotope_match_count'][:].astype(int).tolist()
+    if charge_source != [3, 4]:
+        raise SystemExit(f'unexpected precursor charge_source: {charge_source}')
+    if isotope_matches != [3, 0]:
+        raise SystemExit(f'unexpected precursor isotope_match_count: {isotope_matches}')
 ");
         process.StartInfo.ArgumentList.Add(path);
         process.StartInfo.ArgumentList.Add(expectedBegin.ToString(System.Globalization.CultureInfo.InvariantCulture));

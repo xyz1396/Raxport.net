@@ -70,6 +70,8 @@ typedef struct RaxH5Writer {
     hid_t candidate_mz;
     hid_t candidate_intensity;
     hid_t candidate_one_over_k0;
+    hid_t candidate_charge_source;
+    hid_t candidate_isotope_match_count;
 
     hid_t scan_filter_value;
     hid_t activation_value;
@@ -399,6 +401,8 @@ static int create_all_datasets(RaxH5Writer *writer, int compression_level)
     writer->candidate_mz = create_dataset(writer->candidates, "mz", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
     writer->candidate_intensity = create_dataset(writer->candidates, "intensity", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
     writer->candidate_one_over_k0 = create_dataset(writer->candidates, "one_over_k0", H5T_NATIVE_DOUBLE, SCAN_CHUNK, compression_level);
+    writer->candidate_charge_source = create_dataset(writer->candidates, "charge_source", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
+    writer->candidate_isotope_match_count = create_dataset(writer->candidates, "isotope_match_count", H5T_NATIVE_INT, SCAN_CHUNK, compression_level);
     writer->scan_filter_value = create_dataset(writer->string_tables, "scan_filter", scan_filter_string_type, SCAN_CHUNK, compression_level);
     writer->activation_value = create_dataset(writer->string_tables, "activation", activation_string_type, SCAN_CHUNK, compression_level);
     writer->reaction_activation_type_value = create_dataset(writer->string_tables, "reaction_activation_type", activation_string_type, SCAN_CHUNK, compression_level);
@@ -420,6 +424,7 @@ static int create_all_datasets(RaxH5Writer *writer, int compression_level)
         writer->reaction_one_over_k0_end >= 0 && writer->reaction_candidate_start >= 0 &&
         writer->reaction_candidate_count >= 0 && writer->candidate_charge >= 0 && writer->candidate_mz >= 0 &&
         writer->candidate_intensity >= 0 && writer->candidate_one_over_k0 >= 0 &&
+        writer->candidate_charge_source >= 0 && writer->candidate_isotope_match_count >= 0 &&
         writer->scan_filter_value >= 0 && writer->activation_value >= 0 &&
         writer->reaction_activation_type_value >= 0) {
         rc = RAX_OK;
@@ -470,7 +475,7 @@ RAXPORT_API int rax_h5_create(const char *path, const char *source_raw_file, con
         return RAX_FAIL;
     }
 
-    if (write_int_attr(writer->file, "schema_version", 5) != RAX_OK ||
+    if (write_int_attr(writer->file, "schema_version", 6) != RAX_OK ||
         write_string_attr(writer->file, "raxport_version", raxport_version) != RAX_OK ||
         write_string_attr(writer->file, "source_raw_file", source_raw_file) != RAX_OK ||
         write_string_attr(writer->file, "instrument_model", instrument_model) != RAX_OK) {
@@ -535,6 +540,8 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
                   const double *candidate_mz,
                   const double *candidate_intensity,
                   const double *candidate_one_over_k0,
+                  const int *candidate_charge_source,
+                  const int *candidate_isotope_match_count,
                   int new_scan_filter_total,
                   const char **new_scan_filters,
                   int new_activation_total,
@@ -627,7 +634,9 @@ RAXPORT_API int rax_h5_append(RaxH5Writer *writer,
     if (append_dataset(writer->candidate_charge, H5T_NATIVE_INT, candidate_offset, (hsize_t)candidate_total, candidate_charge) != RAX_OK ||
         append_dataset(writer->candidate_mz, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_mz) != RAX_OK ||
         append_dataset(writer->candidate_intensity, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_intensity) != RAX_OK ||
-        append_dataset(writer->candidate_one_over_k0, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_one_over_k0) != RAX_OK) {
+        append_dataset(writer->candidate_one_over_k0, H5T_NATIVE_DOUBLE, candidate_offset, (hsize_t)candidate_total, candidate_one_over_k0) != RAX_OK ||
+        append_dataset(writer->candidate_charge_source, H5T_NATIVE_INT, candidate_offset, (hsize_t)candidate_total, candidate_charge_source) != RAX_OK ||
+        append_dataset(writer->candidate_isotope_match_count, H5T_NATIVE_INT, candidate_offset, (hsize_t)candidate_total, candidate_isotope_match_count) != RAX_OK) {
         set_error(error, error_len, "Unable to append precursor candidate datasets.");
         return RAX_FAIL;
     }
@@ -710,6 +719,8 @@ RAXPORT_API int rax_h5_close(RaxH5Writer *writer, char *error, int error_len)
     close_dataset(writer->candidate_mz);
     close_dataset(writer->candidate_intensity);
     close_dataset(writer->candidate_one_over_k0);
+    close_dataset(writer->candidate_charge_source);
+    close_dataset(writer->candidate_isotope_match_count);
     close_dataset(writer->scan_filter_value);
     close_dataset(writer->activation_value);
     close_dataset(writer->reaction_activation_type_value);

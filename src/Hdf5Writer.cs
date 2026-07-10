@@ -277,6 +277,8 @@ internal sealed partial class Hdf5Writer : IRaxportWriter
             double[] candidateMz = new double[candidateBatchCount];
             double[] candidateIntensity = new double[candidateBatchCount];
             double[] candidateOneOverK0 = new double[candidateBatchCount];
+            int[] candidateChargeSource = new int[candidateBatchCount];
+            int[] candidateIsotopeMatchCount = new int[candidateBatchCount];
             for (int i = 0; i < candidateBatchCount; i++)
             {
                 RaxportPrecursorCandidateRecord candidate = candidates[i];
@@ -284,6 +286,8 @@ internal sealed partial class Hdf5Writer : IRaxportWriter
                 candidateMz[i] = candidate.Mz;
                 candidateIntensity[i] = candidate.Intensity;
                 candidateOneOverK0[i] = candidate.OneOverK0;
+                candidateChargeSource[i] = (int)candidate.ChargeSource;
+                candidateIsotopeMatchCount[i] = candidate.IsotopeMatchCount;
             }
 
             rc = NativeMethods.Append(
@@ -333,6 +337,8 @@ internal sealed partial class Hdf5Writer : IRaxportWriter
                 candidateMz,
                 candidateIntensity,
                 candidateOneOverK0,
+                candidateChargeSource,
+                candidateIsotopeMatchCount,
                 pendingScanFilters.Count,
                 newScanFilters.Pointers,
                 pendingActivations.Count,
@@ -731,6 +737,8 @@ internal sealed partial class Hdf5Writer : IRaxportWriter
             double[] candidateMz,
             double[] candidateIntensity,
             double[] candidateOneOverK0,
+            int[] candidateChargeSource,
+            int[] candidateIsotopeMatchCount,
             int newScanFilterTotal,
             IntPtr[] newScanFilters,
             int newActivationTotal,

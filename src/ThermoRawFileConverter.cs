@@ -108,12 +108,14 @@ namespace Raxport
                 mReaction.PrecursorMass,
                 mReaction.IsolationWidth,
                 mzTolerancePpm);
-            List<RaxportPeakRecord> precursorPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+            List<RaxportSelectedPrecursorRecord> precursorSelections = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
                 evidencePeaks,
                 isotopeEvidencePeaks,
+                mReaction.PrecursorMass,
                 topNprecursor,
                 intensityThreshold,
-                mzTolerancePpm);
+                mzTolerancePpm,
+                chargeStateInt);
 
             RaxportReactionRecord reaction = new(
                 mReaction.PrecursorMass,
@@ -128,13 +130,9 @@ namespace Raxport
                 mReaction.LastPrecursorMass,
                 mReaction.IsolationWidthOffset,
                 PrecursorSelector.ExpandPrecursorCandidates(
-                    precursorPeaks,
-                    isotopeEvidencePeaks,
-                    mReaction.PrecursorMass,
-                    mReaction.IsolationWidth,
+                    precursorSelections,
                     topNprecursor,
-                    mzTolerancePpm,
-                    chargeStateInt));
+                    mzTolerancePpm));
 
             scanWriter!.AddScan(new RaxportScanRecord(
                 mScanNumber,
@@ -152,7 +150,7 @@ namespace Raxport
                 mFilter.Polarity.ToString()));
         }
 
-        private void WriteScansChunk(int leftPrecursorScanNumber, int rightPrecursorScanNumber,
+        private IReadOnlyList<RaxportPeakRecord> WriteScansChunk(int leftPrecursorScanNumber, int rightPrecursorScanNumber,
             Scan leftPrecursorScan, Scan rightPrecursorScan, IScanFilter rightFilter,
             double leftPrecursorRT, double rightPrecursorRT,
             IReadOnlyList<RaxportPeakRecord> leftPrecursorPeaks,
@@ -188,6 +186,8 @@ namespace Raxport
                 WriteFT2Scan(MSnScanNumbersChunk[i], currentPrecursorScanNumber, MSnScanReactionsChunk[i],
                     MSnScanFiltersChunk[i], MSnScansRTsChunk[i], currentPrecursorPeaks);
             }
+
+            return ifMergeScans ? currentPrecursorPeaks : rightPrecursorPeaks;
         }
 
         public Scan MergeTwoScans(int leftScanNumber, int rightScanNumber)
@@ -215,6 +215,7 @@ namespace Raxport
 
             LogConversionStart(outputFile);
             int currentScanNumber = firstScanNumber, precursorScanCount = 0, leftPrecursorScanNumber = 0, rightPrecursorScanNumber = 0;
+            int trailingPrecursorScanNumber = 0;
             int parsedMS1Scans = 0, parsedMSnScans = 0;
             averager = ScanAveragerPlus.FromFile(rawFile);
             IScanEvent currentEvent;
@@ -224,6 +225,7 @@ namespace Raxport
             double currentRT = 0, leftPrecursorRT = 0, rightPrecursorRT = 0;
             IReadOnlyList<RaxportPeakRecord> leftPrecursorPeaks = Array.Empty<RaxportPeakRecord>();
             IReadOnlyList<RaxportPeakRecord> rightPrecursorPeaks = Array.Empty<RaxportPeakRecord>();
+            IReadOnlyList<RaxportPeakRecord> trailingPrecursorPeaks = Array.Empty<RaxportPeakRecord>();
             while (currentScanNumber <= lastScanNumber)
             {
                 currentRT = rawFile!.RetentionTimeFromScanNumber(currentScanNumber);
@@ -245,6 +247,8 @@ namespace Raxport
                         {
                             leftPrecursorPeaks = CollectPeaks(currentScanNumber);
                             WriteFT1Scan(leftPrecursorScanNumber, currentFilter, leftPrecursorRT, leftPrecursorPeaks);
+                            trailingPrecursorScanNumber = leftPrecursorScanNumber;
+                            trailingPrecursorPeaks = leftPrecursorPeaks;
                         }
                     }
                     else
@@ -253,10 +257,11 @@ namespace Raxport
                         rightPrecursorScan = currentScan;
                         rightPrecursorRT = currentRT;
                         rightPrecursorPeaks = ifMergeScans ? Array.Empty<RaxportPeakRecord>() : CollectPeaks(currentScanNumber);
-                        WriteScansChunk(leftPrecursorScanNumber, rightPrecursorScanNumber,
+                        trailingPrecursorPeaks = WriteScansChunk(leftPrecursorScanNumber, rightPrecursorScanNumber,
                             leftPrecursorScan, rightPrecursorScan, currentFilter,
                             leftPrecursorRT, rightPrecursorRT,
                             leftPrecursorPeaks, rightPrecursorPeaks);
+                        trailingPrecursorScanNumber = rightPrecursorScanNumber;
                         ClearMSnChunk();
                         leftPrecursorScanNumber = currentScanNumber;
                         leftPrecursorScan = currentScan;
@@ -277,14 +282,20 @@ namespace Raxport
                 currentScanNumber++;
             }
 
+            if (ifMergeScans && precursorScanCount == 1)
+            {
+                leftPrecursorPeaks = CollectPeaks(leftPrecursorScan);
+                IScanFilter leftPrecursorFilter = rawFile!.GetFilterForScanNumber(leftPrecursorScanNumber);
+                WriteFT1Scan(leftPrecursorScanNumber, leftPrecursorFilter, leftPrecursorRT, leftPrecursorPeaks, leftPrecursorScan);
+                trailingPrecursorScanNumber = leftPrecursorScanNumber;
+                trailingPrecursorPeaks = leftPrecursorPeaks;
+            }
+
             if (MSnScanNumbersChunk.Count > 0)
             {
-                IReadOnlyList<RaxportPeakRecord> trailingPrecursorPeaks = ifMergeScans
-                    ? CollectPeaks(rightPrecursorScan)
-                    : rightPrecursorPeaks;
                 for (int i = 0; i < MSnScanNumbersChunk.Count; i++)
                 {
-                    WriteFT2Scan(MSnScanNumbersChunk[i], rightPrecursorScanNumber, MSnScanReactionsChunk[i],
+                    WriteFT2Scan(MSnScanNumbersChunk[i], trailingPrecursorScanNumber, MSnScanReactionsChunk[i],
                                  MSnScanFiltersChunk[i], MSnScansRTsChunk[i], trailingPrecursorPeaks);
                 }
             }
@@ -327,7 +338,7 @@ namespace Raxport
                     peak.SignalToNoise,
                     (int)peak.Charge));
             }
-            return peaks;
+            return NormalizeCollectedPeaks(peaks);
         }
 
         private static List<RaxportPeakRecord> CollectPeaks(SegmentedScan segmentedScan)
@@ -345,6 +356,18 @@ namespace Raxport
                     0,
                     0));
             }
+            return NormalizeCollectedPeaks(peaks, preserveNonPositiveIntensity: true);
+        }
+
+        internal static List<RaxportPeakRecord> NormalizeCollectedPeaks(
+            List<RaxportPeakRecord> peaks,
+            bool preserveNonPositiveIntensity = false)
+        {
+            peaks.RemoveAll(peak =>
+                !double.IsFinite(peak.Mz) || peak.Mz <= 0 ||
+                !double.IsFinite(peak.Intensity) ||
+                (!preserveNonPositiveIntensity && peak.Intensity <= 0));
+            peaks.Sort(static (left, right) => left.Mz.CompareTo(right.Mz));
             return peaks;
         }
 
@@ -441,6 +464,7 @@ namespace Raxport
             }
             Console.WriteLine($"Merge adjacent MS1  : {ifMergeScans}");
             Console.WriteLine($"Top precursor count : {topNprecursor:N0}");
+            Console.WriteLine($"Envelope intensity  : {intensityThreshold:P1}");
             Console.WriteLine($"m/z tolerance       : {mzTolerancePpm:0.###} ppm");
             Console.WriteLine("============================================================");
         }

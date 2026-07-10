@@ -390,12 +390,18 @@ internal sealed class MzMlWriter : IRaxportWriter
         sb.Append("   </isolationWindow>\n");
         sb.Append("   <selectedIonList count=\"1\">\n");
         sb.Append("    <selectedIon>\n");
-        double selectedMz = reaction.Candidates.Count > 0 ? reaction.Candidates[0].Mz : reaction.PrecursorMass;
-        double selectedIntensity = reaction.Candidates.Count > 0 ? reaction.Candidates[0].Intensity : 0;
+        RaxportPrecursorCandidateRecord? primaryCandidate = reaction.Candidates.Count > 0 ? reaction.Candidates[0] : null;
+        double selectedMz = primaryCandidate?.Mz ?? reaction.PrecursorMass;
+        double selectedIntensity = primaryCandidate?.Intensity ?? 0;
+        int selectedCharge = primaryCandidate?.Charge ?? reaction.ChargeState;
         AppendCvParam(sb, "     ", "MS:1000744", "selected ion m/z", Format(selectedMz), "MS:1000040", "m/z", "MS");
-        if (reaction.ChargeState != 0)
+        if (selectedCharge != 0)
         {
-            AppendCvParam(sb, "     ", "MS:1000041", "charge state", reaction.ChargeState.ToString(CultureInfo.InvariantCulture));
+            AppendCvParam(sb, "     ", "MS:1000041", "charge state", selectedCharge.ToString(CultureInfo.InvariantCulture));
+        }
+        if (primaryCandidate is not null)
+        {
+            AppendUserParam(sb, "     ", "Raxport reported precursor charge", reaction.ChargeState.ToString(CultureInfo.InvariantCulture), "xsd:int");
         }
         if (selectedIntensity > 0)
         {
@@ -429,6 +435,8 @@ internal sealed class MzMlWriter : IRaxportWriter
             AppendUserParam(sb, indent, prefix + "mz", Format(candidate.Mz), "xsd:double");
             AppendUserParam(sb, indent, prefix + "intensity", Format(candidate.Intensity), "xsd:double");
             AppendUserParam(sb, indent, prefix + "one_over_k0", Format(candidate.OneOverK0), "xsd:double");
+            AppendUserParam(sb, indent, prefix + "charge_source", candidate.ChargeSource.ToString(), "xsd:string");
+            AppendUserParam(sb, indent, prefix + "isotope_match_count", candidate.IsotopeMatchCount.ToString(CultureInfo.InvariantCulture), "xsd:int");
         }
     }
 

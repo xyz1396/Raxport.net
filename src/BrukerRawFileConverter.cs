@@ -21,6 +21,8 @@ internal sealed class BrukerRawFileConverter
     private readonly Dictionary<long, int> tdfParentUseCounts = new();
     private readonly List<BrukerFrame> ms1Frames = new();
     private long tdfMs1CentroidsWithoutTrace;
+    private long missingParentFrameCount;
+    private long emptyPrecursorEvidenceCount;
     private string? tempDirectory;
 
     public BrukerRawFileConverter(
@@ -90,10 +92,13 @@ internal sealed class BrukerRawFileConverter
 
     private void WriteTsf(string analysisDirectory, string outputFile, Stopwatch totalTimer, TimeSpan inputPrepareElapsed)
     {
+        missingParentFrameCount = 0;
+        emptyPrecursorEvidenceCount = 0;
         using NativeSqliteConnection database = NativeSqliteConnection.Open(Path.Combine(analysisDirectory, "analysis.tsf"));
         string instrumentModel = ReadInstrumentModel(database);
         LoadTsfFrames(database);
         List<TsfMsMsInfo> ms2Rows = ReadTsfMsMsInfo(database);
+        Dictionary<long, int> parentUseCounts = BuildParentUseCounts(ms2Rows.Select(row => row.ParentFrameId));
         int ms1RowsPlanned = frames.Values.Count(frame => frame.MsMsType == 0);
         int ms2RowsPlanned = ms2Rows.Count;
         int precursorRowsPlanned = ms2Rows.Count;
@@ -112,7 +117,10 @@ internal sealed class BrukerRawFileConverter
             }
 
             List<RaxportPeakRecord> peaks = reader.ReadLineSpectrum(frame.Id);
-            parentPeaksByFrame[frame.Id] = peaks;
+            if (parentUseCounts.ContainsKey(frame.Id))
+            {
+                parentPeaksByFrame[frame.Id] = peaks;
+            }
             ms1Frames.Add(frame);
             writer.AddScan(CreateMs1Scan(frame, peaks));
             ms1RowsWritten++;
@@ -128,26 +136,30 @@ internal sealed class BrukerRawFileConverter
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
                 mzTolerancePpm);
+            if (evidencePeaks.Count == 0)
+            {
+                emptyPrecursorEvidenceCount++;
+            }
             List<RaxportPeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
                 parentPeaks,
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
                 mzTolerancePpm);
-            List<RaxportPeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+            List<RaxportSelectedPrecursorRecord> selectedPrecursors = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
                 evidencePeaks,
                 isotopeEvidencePeaks,
+                ms2.TriggerMass,
                 topNprecursor,
                 intensityThreshold,
                 mzTolerancePpm,
-                preferredCharge: ms2.PrecursorCharge ?? 0);
+                ms2.PrecursorCharge ?? 0);
             RaxportReactionRecord reaction = CreateReaction(
                 ms2.TriggerMass,
                 ms2.IsolationWidth,
                 ms2.PrecursorCharge ?? 0,
                 ms2.CollisionEnergy,
                 "CID",
-                selectedPeaks,
-                isotopeEvidencePeaks);
+                selectedPrecursors);
             writer.AddScan(new RaxportScanRecord(
                 checked((int)syntheticScanNumber++),
                 2,
@@ -158,6 +170,10 @@ internal sealed class BrukerRawFileConverter
                 checked((int)(ms2.ParentFrameId ?? 0)),
                 reaction,
                 reader.ReadLineSpectrum(frame.Id)));
+            if (ConsumeParentUse(parentUseCounts, ms2.ParentFrameId) && ms2.ParentFrameId.HasValue)
+            {
+                parentPeaksByFrame.Remove(ms2.ParentFrameId.Value);
+            }
             ms2RowsWritten++;
         }
 
@@ -169,6 +185,8 @@ internal sealed class BrukerRawFileConverter
 
     private void WriteTdf(string analysisDirectory, string outputFile, Stopwatch totalTimer, TimeSpan inputPrepareElapsed)
     {
+        missingParentFrameCount = 0;
+        emptyPrecursorEvidenceCount = 0;
         using NativeSqliteConnection database = NativeSqliteConnection.Open(Path.Combine(analysisDirectory, "analysis.tdf"));
         string instrumentModel = ReadInstrumentModel(database);
         LoadTdfFrames(database);
@@ -270,6 +288,10 @@ internal sealed class BrukerRawFileConverter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
+        if (evidencePeaks.Count == 0)
+        {
+            emptyPrecursorEvidenceCount++;
+        }
         List<RaxportPeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
@@ -278,21 +300,21 @@ internal sealed class BrukerRawFileConverter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<RaxportPeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+        List<RaxportSelectedPrecursorRecord> selectedPrecursors = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
             evidencePeaks,
             isotopeEvidencePeaks,
+            ms2.IsolationMz,
             topNprecursor,
             intensityThreshold,
             mzTolerancePpm,
-            preferredCharge: ms2.Charge ?? 0);
+            ms2.Charge ?? 0);
         RaxportReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
             ms2.IsolationWidth,
             ms2.Charge ?? 0,
             ms2.CollisionEnergy,
             "CID",
-            selectedPeaks,
-            isotopeEvidencePeaks,
+            selectedPrecursors,
             oneOverK0Begin,
             oneOverK0End);
         List<RaxportPeakRecord> fragmentPeaks = reader.ReadPasefMsMs(ms2.PrecursorId);
@@ -330,6 +352,10 @@ internal sealed class BrukerRawFileConverter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
+        if (evidencePeaks.Count == 0)
+        {
+            emptyPrecursorEvidenceCount++;
+        }
         List<RaxportPeakRecord> isotopeEvidencePeaks = PrecursorSelector.GetIsotopeEvidencePeaks(
             parentPeaks,
             ms2.IsolationMz,
@@ -338,21 +364,20 @@ internal sealed class BrukerRawFileConverter
             oneOverK0Begin,
             oneOverK0End,
             parentOneOverK0Axis);
-        List<RaxportPeakRecord> selectedPeaks = PrecursorSelector.FindPrecursorPeaksFromEvidence(
+        List<RaxportSelectedPrecursorRecord> selectedPrecursors = PrecursorSelector.SelectPrecursorEnvelopesFromEvidence(
             evidencePeaks,
             isotopeEvidencePeaks,
+            ms2.IsolationMz,
             topNprecursor,
             intensityThreshold,
-            mzTolerancePpm,
-            preferredCharge: 0);
+            mzTolerancePpm);
         RaxportReactionRecord reaction = CreateReaction(
             ms2.IsolationMz,
             ms2.IsolationWidth,
             0,
             ms2.CollisionEnergy,
             "CID",
-            selectedPeaks,
-            isotopeEvidencePeaks,
+            selectedPrecursors,
             oneOverK0Begin,
             oneOverK0End);
         writer.AddScan(new RaxportScanRecord(
@@ -375,8 +400,7 @@ internal sealed class BrukerRawFileConverter
         int chargeState,
         double collisionEnergy,
         string activation,
-        IReadOnlyList<RaxportPeakRecord> precursorPeaks,
-        IReadOnlyList<RaxportPeakRecord> evidencePeaks,
+        IReadOnlyList<RaxportSelectedPrecursorRecord> selectedPrecursors,
         double oneOverK0Begin = 0,
         double oneOverK0End = 0)
     {
@@ -393,13 +417,9 @@ internal sealed class BrukerRawFileConverter
             0,
             0,
             PrecursorSelector.ExpandPrecursorCandidates(
-                precursorPeaks,
-                evidencePeaks,
-                precursorMass,
-                isolationWidth,
+                selectedPrecursors,
                 topNprecursor,
-                mzTolerancePpm,
-                chargeState),
+                mzTolerancePpm),
             oneOverK0Begin,
             oneOverK0End);
     }
@@ -408,16 +428,52 @@ internal sealed class BrukerRawFileConverter
     {
         if (parentFrameId is null || !parentPeaksByFrame.TryGetValue(parentFrameId.Value, out IReadOnlyList<RaxportPeakRecord>? peaks))
         {
+            missingParentFrameCount++;
             return Array.Empty<RaxportPeakRecord>();
         }
 
         return peaks;
     }
 
+    internal static Dictionary<long, int> BuildParentUseCounts(IEnumerable<long?> parentFrameIds)
+    {
+        Dictionary<long, int> useCounts = new();
+        foreach (long? parentFrameId in parentFrameIds)
+        {
+            if (!parentFrameId.HasValue)
+            {
+                continue;
+            }
+
+            useCounts.TryGetValue(parentFrameId.Value, out int count);
+            useCounts[parentFrameId.Value] = count + 1;
+        }
+
+        return useCounts;
+    }
+
+    internal static bool ConsumeParentUse(Dictionary<long, int> useCounts, long? parentFrameId)
+    {
+        if (!parentFrameId.HasValue || !useCounts.TryGetValue(parentFrameId.Value, out int count))
+        {
+            return false;
+        }
+
+        if (count <= 1)
+        {
+            useCounts.Remove(parentFrameId.Value);
+            return true;
+        }
+
+        useCounts[parentFrameId.Value] = count - 1;
+        return false;
+    }
+
     private IReadOnlyList<RaxportPeakRecord> GetTdfParentPeaks(BrukerTimsReader reader, long? parentFrameId)
     {
         if (parentFrameId is null || !frames.TryGetValue(parentFrameId.Value, out BrukerFrame? frame))
         {
+            missingParentFrameCount++;
             return Array.Empty<RaxportPeakRecord>();
         }
 
@@ -760,6 +816,7 @@ internal sealed class BrukerRawFileConverter
             Console.WriteLine($"Writer compression  : gzip level {writerCompressionLevel:N0}");
         }
         Console.WriteLine($"Top precursor count : {topNprecursor:N0}");
+        Console.WriteLine($"Envelope intensity  : {intensityThreshold:P1}");
         Console.WriteLine($"m/z tolerance       : {mzTolerancePpm:0.###} ppm");
         Console.WriteLine("============================================================");
     }
@@ -790,6 +847,8 @@ internal sealed class BrukerRawFileConverter
         Console.WriteLine($"Output peak rows written    : {writer.TotalPeaks:N0}");
         Console.WriteLine($"Output reaction rows written: {writer.TotalReactions:N0}");
         Console.WriteLine($"Output precursor candidates : {writer.TotalCandidates:N0}");
+        Console.WriteLine($"Missing parent frames       : {missingParentFrameCount:N0}");
+        Console.WriteLine($"Empty precursor evidence    : {emptyPrecursorEvidenceCount:N0}");
         Console.WriteLine($"Output flush count          : {writer.FlushCount:N0}");
         Console.WriteLine("------------------------------------------------------------");
         Console.WriteLine($"Input prepare               : {FormatElapsed(inputPrepareElapsed)} ({Percent(inputPrepareElapsed, totalElapsed):0.0}%)");
@@ -1122,54 +1181,91 @@ internal sealed class BrukerTimsReader : IDisposable
             throw new ArgumentException("Raw scans and m/z arrays must have matching counts.");
         }
 
-        Dictionary<long, double> traceIntensityByCentroidAndMobility = new();
-        for (int scanIndex = 0; scanIndex < rawScans.Count; scanIndex++)
+        int[] scanOrder = new int[rawScans.Count];
+        bool scanOrderIsSorted = true;
+        for (int i = 0; i < scanOrder.Length; i++)
         {
-            BrukerRawScan scan = rawScans[scanIndex];
-            double[] mzValues = mzByScan[scanIndex];
-            if (scan.Intensities.Length != mzValues.Length)
+            scanOrder[i] = i;
+            if (i > 0 && rawScans[i - 1].ScanNumber > rawScans[i].ScanNumber)
             {
-                throw new ArgumentException("Each scan's intensity and m/z arrays must have matching lengths.");
+                scanOrderIsSorted = false;
             }
+        }
 
-            int mobilityIndex = scan.ScanNumber;
+        if (!scanOrderIsSorted)
+        {
+            Array.Sort(scanOrder, (left, right) =>
+            {
+                int comparison = rawScans[left].ScanNumber.CompareTo(rawScans[right].ScanNumber);
+                return comparison != 0 ? comparison : left.CompareTo(right);
+            });
+        }
+
+        List<MobilityTracePoint>?[] tracePointsByCentroid = new List<MobilityTracePoint>?[centroids.Count];
+        double[] intensityByCentroid = new double[centroids.Count];
+        int[] touchedCentroidIndices = new int[centroids.Count];
+        int scanOrderIndex = 0;
+        while (scanOrderIndex < scanOrder.Length)
+        {
+            int mobilityIndex = rawScans[scanOrder[scanOrderIndex]].ScanNumber;
             if ((uint)mobilityIndex >= (uint)oneOverK0ByIndex.Count)
             {
                 throw new ArgumentException("Raw scan number is outside the supplied 1/K0 axis.");
             }
 
-            for (int peakIndex = 0; peakIndex < mzValues.Length; peakIndex++)
+            int touchedCentroidCount = 0;
+            do
             {
-                uint intensity = scan.Intensities[peakIndex];
-                if (intensity == 0)
+                int scanIndex = scanOrder[scanOrderIndex++];
+                BrukerRawScan scan = rawScans[scanIndex];
+                double[] mzValues = mzByScan[scanIndex];
+                if (scan.Intensities.Length != mzValues.Length)
                 {
-                    continue;
+                    throw new ArgumentException("Scan intensity and m/z arrays must have matching lengths.");
                 }
 
-                int centroidIndex = FindNearestCentroid(centroids, mzValues[peakIndex], mzTolerancePpm);
-                if (centroidIndex < 0)
+                int centroidLowerBound = 0;
+                double previousMz = double.NegativeInfinity;
+                for (int peakIndex = 0; peakIndex < mzValues.Length; peakIndex++)
                 {
-                    continue;
+                    uint intensity = scan.Intensities[peakIndex];
+                    if (intensity == 0)
+                    {
+                        continue;
+                    }
+
+                    double mz = mzValues[peakIndex];
+                    bool mzIsNonDecreasing = mz >= previousMz;
+                    int centroidIndex = FindNearestCentroid(
+                        centroids,
+                        mz,
+                        mzTolerancePpm,
+                        ref centroidLowerBound,
+                        mzIsNonDecreasing);
+                    previousMz = mz;
+                    if (centroidIndex < 0)
+                    {
+                        continue;
+                    }
+
+                    if (intensityByCentroid[centroidIndex] == 0)
+                    {
+                        touchedCentroidIndices[touchedCentroidCount++] = centroidIndex;
+                    }
+                    intensityByCentroid[centroidIndex] += intensity;
                 }
-
-                long key = PackTraceKey(centroidIndex, mobilityIndex);
-                traceIntensityByCentroidAndMobility.TryGetValue(key, out double existingIntensity);
-                traceIntensityByCentroidAndMobility[key] = existingIntensity + intensity;
             }
-        }
+            while (scanOrderIndex < scanOrder.Length &&
+                   rawScans[scanOrder[scanOrderIndex]].ScanNumber == mobilityIndex);
 
-        List<MobilityTracePoint>?[] tracePointsByCentroid = new List<MobilityTracePoint>?[centroids.Count];
-        foreach (KeyValuePair<long, double> pair in traceIntensityByCentroidAndMobility)
-        {
-            if (pair.Value <= 0)
+            for (int i = 0; i < touchedCentroidCount; i++)
             {
-                continue;
+                int centroidIndex = touchedCentroidIndices[i];
+                List<MobilityTracePoint> tracePoints =
+                    tracePointsByCentroid[centroidIndex] ??= new List<MobilityTracePoint>();
+                tracePoints.Add(new MobilityTracePoint(mobilityIndex, (float)intensityByCentroid[centroidIndex]));
+                intensityByCentroid[centroidIndex] = 0;
             }
-
-            int centroidIndex = TraceKeyCentroidIndex(pair.Key);
-            int oneOverK0Index = TraceKeyOneOverK0Index(pair.Key);
-            List<MobilityTracePoint> tracePoints = tracePointsByCentroid[centroidIndex] ??= new List<MobilityTracePoint>();
-            tracePoints.Add(new MobilityTracePoint(oneOverK0Index, (float)pair.Value));
         }
 
         omittedCentroids = 0;
@@ -1183,7 +1279,6 @@ internal sealed class BrukerTimsReader : IDisposable
                 continue;
             }
 
-            tracePoints.Sort(static (left, right) => left.OneOverK0Index.CompareTo(right.OneOverK0Index));
             int[] oneOverK0Indices = new int[tracePoints.Count];
             float[] intensities = new float[tracePoints.Count];
             for (int i = 0; i < tracePoints.Count; i++)
@@ -1200,21 +1295,6 @@ internal sealed class BrukerTimsReader : IDisposable
 
 
     private readonly record struct MobilityTracePoint(int OneOverK0Index, float Intensity);
-
-    private static long PackTraceKey(int centroidIndex, int oneOverK0Index)
-    {
-        return ((long)centroidIndex << 32) | (uint)oneOverK0Index;
-    }
-
-    private static int TraceKeyCentroidIndex(long key)
-    {
-        return (int)(key >> 32);
-    }
-
-    private static int TraceKeyOneOverK0Index(long key)
-    {
-        return (int)key;
-    }
 
     private IReadOnlyList<BrukerRawScan> ReadRawScans(long frameId, int scanBegin, int scanEnd)
     {
@@ -1247,13 +1327,18 @@ internal sealed class BrukerTimsReader : IDisposable
         }
     }
 
-    private static int FindNearestCentroid(IReadOnlyList<RaxportPeakRecord> centroids, double mz, double mzTolerancePpm)
+    private static int FindNearestCentroid(
+        IReadOnlyList<RaxportPeakRecord> centroids,
+        double mz,
+        double mzTolerancePpm,
+        ref int lowerBoundHint,
+        bool useLowerBoundHint)
     {
-        int low = 0;
+        int low = useLowerBoundHint ? Math.Clamp(lowerBoundHint, 0, centroids.Count) : 0;
         int high = centroids.Count - 1;
         while (low <= high)
         {
-            int mid = (low + high) / 2;
+            int mid = low + ((high - low) / 2);
             if (centroids[mid].Mz < mz)
             {
                 low = mid + 1;
@@ -1264,6 +1349,7 @@ internal sealed class BrukerTimsReader : IDisposable
             }
         }
 
+        lowerBoundHint = low;
         int bestIndex = -1;
         double bestDelta = double.MaxValue;
         CheckCandidate(low - 1);

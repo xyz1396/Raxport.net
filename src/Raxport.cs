@@ -17,6 +17,7 @@ namespace Raxport
         private static bool ifMergeScans = false;
         private static int topN = 15;
         private static double mzTolerancePpm = 10.0;
+        private static double precursorIntensityFraction = 0.99;
 
         public static void StopNoCloseWindow()
         {
@@ -69,8 +70,9 @@ namespace Raxport
                 "  -p N                    Peak flush units; one unit is 10,000,000 peak rows. Default: 2.\n" +
                 "  --hdf5-compression-level N  HDF5 gzip compression level 0-9. 0 disables compression; default: 1.\n" +
                 "  --format FORMAT          Output format: hdf5 or mzml. Default: hdf5.\n" +
-                "  -n N                    Precursor m/z peaks selected for each MSn scan; charge-expanded candidates may be larger. Default: 15.\n" +
+                "  -n N                    Precursor isotope-envelope apex m/z values selected per MSn scan; charge-expanded candidates may be larger. Default: 15.\n" +
                 "  --mz-tolerance-ppm PPM  Precursor m/z matching tolerance. Default: 10.\n" +
+                "  --precursor-intensity-fraction F  Envelope intensity fraction to retain, in (0,1]. Default: 0.99.\n" +
                 "  -m                      Merge adjacent MS1 scans.\n" +
                 "  -h                      Show this help.\n";
             for (int i = 0; i < args.Length; i++)
@@ -83,6 +85,66 @@ namespace Raxport
                 if (args[i] == "-m")
                 {
                     ifMergeScans = true;
+                    continue;
+                }
+                if (args[i] == "-n")
+                {
+                    if ((i + 1) > (args.Length - 1))
+                    {
+                        Console.WriteLine("Args parsing failed! -n requires a positive integer value.");
+                        Console.WriteLine(help);
+                        return false;
+                    }
+
+                    string value = args[++i];
+                    if (!TryParseTopN(value, out int parsedTopN))
+                    {
+                        Console.WriteLine("Args parsing failed! invalid -n value " + value + ". Expected a positive integer.");
+                        Console.WriteLine(help);
+                        return false;
+                    }
+
+                    topN = parsedTopN;
+                    continue;
+                }
+                if (args[i] == "--mz-tolerance-ppm")
+                {
+                    if ((i + 1) > (args.Length - 1))
+                    {
+                        Console.WriteLine("Args parsing failed! --mz-tolerance-ppm requires a non-negative finite value.");
+                        Console.WriteLine(help);
+                        return false;
+                    }
+
+                    string value = args[++i];
+                    if (!TryParseNonNegativeFinite(value, out double parsedTolerance))
+                    {
+                        Console.WriteLine("Args parsing failed! invalid m/z tolerance " + value + ". Expected a non-negative finite value.");
+                        Console.WriteLine(help);
+                        return false;
+                    }
+
+                    mzTolerancePpm = parsedTolerance;
+                    continue;
+                }
+                if (args[i] == "--precursor-intensity-fraction")
+                {
+                    if ((i + 1) > (args.Length - 1))
+                    {
+                        Console.WriteLine("Args parsing failed! --precursor-intensity-fraction requires a value in (0,1].");
+                        Console.WriteLine(help);
+                        return false;
+                    }
+
+                    string value = args[++i];
+                    if (!TryParseUnitFraction(value, out double parsedFraction))
+                    {
+                        Console.WriteLine("Args parsing failed! invalid precursor intensity fraction " + value + ". Expected a value in (0,1].");
+                        Console.WriteLine(help);
+                        return false;
+                    }
+
+                    precursorIntensityFraction = parsedFraction;
                     continue;
                 }
                 if ((i + 1) > (args.Length - 1))
@@ -130,17 +192,6 @@ namespace Raxport
                         return false;
                     }
                 }
-                else if (args[i] == "-n")
-                {
-                    _ = int.TryParse(args[++i], out topN);
-                }
-                else if (args[i] == "--mz-tolerance-ppm")
-                {
-                    if (double.TryParse(args[++i], out double parsedMzTolerancePpm) && parsedMzTolerancePpm >= 0)
-                    {
-                        mzTolerancePpm = parsedMzTolerancePpm;
-                    }
-                }
             }
             try
             {
@@ -182,6 +233,27 @@ namespace Raxport
             return rValue;
         }
 
+        internal static bool TryParseTopN(string value, out int parsedTopN)
+        {
+            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsedTopN)
+                && parsedTopN > 0;
+        }
+
+        internal static bool TryParseNonNegativeFinite(string value, out double parsedValue)
+        {
+            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsedValue)
+                && double.IsFinite(parsedValue)
+                && parsedValue >= 0;
+        }
+
+        internal static bool TryParseUnitFraction(string value, out double fraction)
+        {
+            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out fraction)
+                && double.IsFinite(fraction)
+                && fraction > 0
+                && fraction <= 1;
+        }
+
         private static void Main(string[] args)
         {
             if (ParseArgs(args))
@@ -206,7 +278,7 @@ namespace Raxport
         {
             if (IsBrukerInput(file))
             {
-                BrukerRawFileConverter brukerWriter = new(file, outPath, topN, mzTolerancePpm, maxBufferedPeaks, writerCompressionLevel, outputFormat);
+                BrukerRawFileConverter brukerWriter = new(file, outPath, topN, mzTolerancePpm, maxBufferedPeaks, writerCompressionLevel, outputFormat, precursorIntensityFraction);
                 brukerWriter.Write();
                 return;
             }
@@ -219,7 +291,8 @@ namespace Raxport
                 maxBufferedPeaks,
                 writerCompressionLevel,
                 outputFormat,
-                ifMergeScans);
+                ifMergeScans,
+                precursorIntensityFraction);
             writer.Write();
         }
 
@@ -274,6 +347,8 @@ namespace Raxport
             startInfo.ArgumentList.Add(topN.ToString(CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add("--mz-tolerance-ppm");
             startInfo.ArgumentList.Add(mzTolerancePpm.ToString("R", CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add("--precursor-intensity-fraction");
+            startInfo.ArgumentList.Add(precursorIntensityFraction.ToString("R", CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add("--hdf5-compression-level");
             startInfo.ArgumentList.Add(writerCompressionLevel.ToString(CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add("--format");

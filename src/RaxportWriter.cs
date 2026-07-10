@@ -34,11 +34,22 @@ internal sealed record RaxportPeakMobilityTrace(
     }
 }
 
+internal enum RaxportPrecursorChargeSource
+{
+    Unknown = 0,
+    Peak = 1,
+    Reported = 2,
+    Isotope = 3,
+    Fallback = 4
+}
+
 internal sealed record RaxportPrecursorCandidateRecord(
     int Charge,
     double Mz,
     double Intensity = 0,
-    double OneOverK0 = 0);
+    double OneOverK0 = 0,
+    RaxportPrecursorChargeSource ChargeSource = RaxportPrecursorChargeSource.Unknown,
+    int IsotopeMatchCount = 0);
 
 internal sealed record RaxportReactionRecord(
     double PrecursorMass,
