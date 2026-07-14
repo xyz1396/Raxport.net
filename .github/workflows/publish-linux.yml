@@ -12,48 +12,79 @@ on:
 permissions:
   contents: write
 
-env:
-  DOTNET_VERSION: '8.0.x'
-
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
+    defaults:
+      run:
+        shell: bash -el {0}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Set up conda build environment
+        uses: mamba-org/setup-micromamba@v3
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          environment-name: raxport-sysroot217
+          create-args: >-
+            sysroot_linux-64=2.17
+            gcc_linux-64
+            gxx_linux-64
+            binutils_linux-64
+            patchelf
+            dotnet-sdk=8
+            cmake=3.31
+            ninja
+            pkg-config
+            make
+            autoconf
+            automake
+            libtool
+            git
+            curl
+            zip
+            unzip
+            tar
+            python=3.12
+            h5py
+          cache-environment: true
+          cache-downloads: true
 
-      - name: Install native build prerequisites
+      - name: Prepare vcpkg checkout and cache key
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config autoconf automake libtool ninja-build
+          test "$(micromamba list | awk '$1 == "sysroot_linux-64" { print $2 }')" = 2.17
+          test -n "${CC:-}"
+          test -n "${CXX:-}"
+          test -n "${CONDA_BUILD_SYSROOT:-}"
 
-      - name: Bootstrap vcpkg
-        shell: bash
-        run: |
-          rm -rf vcpkg
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
-          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Install native libraries
-        shell: bash
-        run: |
-          ./vcpkg/vcpkg install hdf5:x64-linux
-          ./vcpkg/vcpkg install sqlite3:x64-linux-dynamic
-
-      - name: Publish
-        shell: bash
-        run: |
           rm -rf bin release
-          dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=linux-x64-single-file -p:UseSharedCompilation=false
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
+          vcpkg_commit="$(git -C vcpkg rev-parse HEAD)"
+          toolchain_hash="$(micromamba list --explicit | sha256sum | cut -d' ' -f1)"
+          echo "VCPKG_CACHE_KEY=vcpkg-linux-glibc217-${toolchain_hash}-${vcpkg_commit}" >> "$GITHUB_ENV"
+          echo "VCPKG_CACHE_PREFIX=vcpkg-linux-glibc217-${toolchain_hash}-" >> "$GITHUB_ENV"
+
+      - name: Restore installed native libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg/installed
+            vcpkg/downloads
+          key: ${{ env.VCPKG_CACHE_KEY }}
+          restore-keys: |
+            ${{ env.VCPKG_CACHE_PREFIX }}
+
+      - name: Build, verify, and test
+        env:
+          RAXPORT_BUILD_IN_ENV: 1
+        run: ./test/build-linux.sh
+
+      - name: Stage artifact
+        run: |
           mkdir -p release
           cp bin/Raxport-linux-x64 release/Raxport-linux-x64
           chmod +x release/Raxport-linux-x64
-          test ! -e bin/libraxport_hdf5.so
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -193,13 +193,14 @@
 
 	<Target Name="BuildLinuxHdf5Bridge"
 			BeforeTargets="ResolveReferences"
-			Inputs="$(RaxportHdf5BridgeSource)"
+			Inputs="$(RaxportHdf5BridgeSource);$(MSBuildProjectFullPath)"
 			Outputs="$(RaxportHdf5BridgeOutput)"
 			Condition="'$(EnableRaxportTests)' != 'true' And '$(RaxportPublishRid)' == 'linux-x64' And $([MSBuild]::IsOSPlatform('Linux')) And Exists('$(RaxportHdf5BridgeSource)')">
 		<Error Condition="!Exists('$(RaxportVcpkgRoot)/include/hdf5.h')" Text="Missing HDF5 headers for $(RaxportPublishRid): $(RaxportVcpkgRoot)/include/hdf5.h" />
 		<Error Condition="!Exists('$(RaxportVcpkgRoot)/lib/libhdf5.a')" Text="Missing static HDF5 library for $(RaxportPublishRid): $(RaxportVcpkgRoot)/lib/libhdf5.a" />
 		<MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(RaxportHdf5BridgeOutput)'))" />
 		<Exec Command="gcc -O3 -DNDEBUG -fPIC -shared &quot;$(RaxportHdf5BridgeSource)&quot; -o &quot;$(RaxportHdf5BridgeOutput)&quot; -I&quot;$(RaxportVcpkgRoot)/include&quot; &quot;$(RaxportVcpkgRoot)/lib/libhdf5.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libz.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libsz.a&quot; &quot;$(RaxportVcpkgRoot)/lib/libaec.a&quot; -lm -ldl -pthread" />
+		<Exec Command="patchelf --remove-rpath &quot;$(RaxportHdf5BridgeOutput)&quot;" />
 	</Target>
 
 	<Target Name="BuildMacHdf5Bridge"

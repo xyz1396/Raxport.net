@@ -21,6 +21,7 @@
 !/test/*.md
 !/test/*.cs
 !/test/*.py
+!/test/*.sh
 
 # Logs and temporary files
 *.log
