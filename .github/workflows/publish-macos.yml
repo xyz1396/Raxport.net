@@ -12,24 +12,15 @@ on:
 permissions:
   contents: write
 
-env:
-  DOTNET_VERSION: '8.0.x'
-
 jobs:
   publish:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - profile: osx-x64-single-file
-            artifact: Raxport-osx-x64
-            triplet: x64-osx
-            sqlite_triplet: x64-osx-dynamic
+          - artifact: Raxport-osx-x64
             runner: macos-15-intel
-          - profile: osx-arm64-single-file
-            artifact: Raxport-osx-arm64
-            triplet: arm64-osx
-            sqlite_triplet: arm64-osx-dynamic
+          - artifact: Raxport-osx-arm64
             runner: macos-15
 
     runs-on: ${{ matrix.runner }}
@@ -37,36 +28,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Set up micromamba build environment
+        uses: mamba-org/setup-micromamba@v3
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          environment-name: raxport
+          create-args: >-
+            dotnet-sdk=8 python=3.12 h5py hdf5=*=nompi_* libsqlite zlib libaec
+          cache-environment: true
+          cache-downloads: true
 
-      - name: Install native build prerequisites
-        run: brew install autoconf automake libtool pkg-config ninja || true
+      - name: Build, verify, and test
+        shell: bash -el {0}
+        run: ./make.sh
 
-      - name: Bootstrap vcpkg
+      - name: Stage artifact
         shell: bash
         run: |
-          rm -rf vcpkg
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
-          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Install native libraries
-        shell: bash
-        run: |
-          ./vcpkg/vcpkg install hdf5:${{ matrix.triplet }}
-          ./vcpkg/vcpkg install sqlite3:${{ matrix.sqlite_triplet }}
-
-      - name: Publish
-        shell: bash
-        run: |
-          rm -rf bin release
-          dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=${{ matrix.profile }} -p:UseSharedCompilation=false
           mkdir -p release
           cp bin/${{ matrix.artifact }} release/${{ matrix.artifact }}
           chmod +x release/${{ matrix.artifact }}
-          test ! -e bin/libraxport_hdf5.dylib
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -12,6 +12,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CONDA_OVERRIDE_GLIBC: '2.17'
+
 jobs:
   publish:
     runs-on: ubuntu-24.04
@@ -26,59 +29,15 @@ jobs:
       - name: Set up conda build environment
         uses: mamba-org/setup-micromamba@v3
         with:
-          environment-name: raxport-sysroot217
+          environment-name: raxport
           create-args: >-
-            sysroot_linux-64=2.17
-            gcc_linux-64
-            gxx_linux-64
-            binutils_linux-64
-            patchelf
-            dotnet-sdk=8
-            cmake=3.31
-            ninja
-            pkg-config
-            make
-            autoconf
-            automake
-            libtool
-            git
-            curl
-            zip
-            unzip
-            tar
-            python=3.12
-            h5py
+            sysroot_linux-64=2.17 gcc_linux-64 binutils_linux-64 patchelf
+            dotnet-sdk=8 python=3.12 h5py hdf5=*=nompi_* libsqlite zlib libaec
           cache-environment: true
           cache-downloads: true
 
-      - name: Prepare vcpkg checkout and cache key
-        run: |
-          test "$(micromamba list | awk '$1 == "sysroot_linux-64" { print $2 }')" = 2.17
-          test -n "${CC:-}"
-          test -n "${CXX:-}"
-          test -n "${CONDA_BUILD_SYSROOT:-}"
-
-          rm -rf bin release
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
-          vcpkg_commit="$(git -C vcpkg rev-parse HEAD)"
-          toolchain_hash="$(micromamba list --explicit | sha256sum | cut -d' ' -f1)"
-          echo "VCPKG_CACHE_KEY=vcpkg-linux-glibc217-${toolchain_hash}-${vcpkg_commit}" >> "$GITHUB_ENV"
-          echo "VCPKG_CACHE_PREFIX=vcpkg-linux-glibc217-${toolchain_hash}-" >> "$GITHUB_ENV"
-
-      - name: Restore installed native libraries
-        uses: actions/cache@v4
-        with:
-          path: |
-            vcpkg/installed
-            vcpkg/downloads
-          key: ${{ env.VCPKG_CACHE_KEY }}
-          restore-keys: |
-            ${{ env.VCPKG_CACHE_PREFIX }}
-
       - name: Build, verify, and test
-        env:
-          RAXPORT_BUILD_IN_ENV: 1
-        run: ./test/build-linux.sh
+        run: ./make.sh
 
       - name: Stage artifact
         run: |

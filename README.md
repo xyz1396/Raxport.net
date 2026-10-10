@@ -28,16 +28,20 @@ The HDF5 native bridge and SQLite runtime are bundled into the executable and se
 
 ### Build binaries
 
-Raxport targets .NET 8. The project also builds a small native HDF5 bridge from `src/native/raxport_hdf5.c`, so the matching vcpkg HDF5 static package must be installed before publishing. Bruker conversion uses a vcpkg-provided SQLite runtime that is bundled into the single-file publish. The publish must run on the matching OS for the native bridge, unless you prebuild the bridge into `bin/obj/native/<rid>/` first. GitHub Actions install these dependencies automatically.
-
-Run these commands from the repo root to publish self-contained single-file binaries into the top-level `bin/` directory:
+Raxport targets .NET 8. Install micromamba and put it in `PATH`, then create the `raxport` environment once using the command in the comments at the top of your build script. Each script automatically runs inside its micromamba environment, uses HDF5 and SQLite from that environment, cleans `build/` and `bin/`, publishes a self-contained single-file executable, and runs tests.
 
 ```bash
-dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=linux-x64-single-file
-dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=win-x64-single-file
-dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=osx-x64-single-file
-dotnet publish src/RaxportNetCore.csproj /p:PublishProfile=osx-arm64-single-file
+# Linux x64 or macOS (automatically selects Intel or Apple Silicon).
+./make.sh
 ```
+
+macOS requires Xcode Command Line Tools (`xcode-select --install`). For Windows, install Visual Studio's **Desktop development with C++** workload and Windows SDK, then run from an **x64 Visual Studio Developer PowerShell**:
+
+```powershell
+.\make.ps1
+```
+
+The micromamba environment creation commands are comments at the top of [make.sh](./make.sh) and [make.ps1](./make.ps1); run the matching command yourself before building. No manual activation is required. Linux builds use a glibc 2.17 sysroot and verify every bundled native library against that baseline. Use the documented `CONDA_OVERRIDE_GLIBC=2.17` when creating the Linux environment so its packages meet that baseline. The scripts also contain runtime heap-size and compression notes.
 
 Output files:
 
@@ -46,7 +50,9 @@ Output files:
 - `bin/Raxport-osx-x64`
 - `bin/Raxport-osx-arm64`
 
-Each output is intended to be distributed as a single file.
+Each output is intended to be distributed as a single file. `bin/` contains only the final executable for the current build; intermediate .NET outputs, native libraries, and test results are kept in the ignored `build/` directory. Native-library debug symbols are stripped from copied Linux/macOS libraries, and single-file compression reduces the download size. Compression adds decompression work at startup; it does not change the conversion code or remove runtime dependencies.
+
+Run `./make.sh clean` on Linux/macOS or `.\make.ps1 clean` on Windows to remove both `bin/` and `build/`. Cleaning does not require micromamba or compiler tools. During builds, temporary files use `build/tmp/`, test results use `build/TestResults/`, and CLI smoke-test bundle extraction uses `build/bundle/`.
 
 ### Command options
 
@@ -145,12 +151,12 @@ The `/reactions` group stores instrument-reported precursor and activation metad
 
 Raxport.net is developed under .NET 8.
 
-Managed dependencies are stored in `dll/`. The ThermoFisher DLLs come from [RawFileReader](https://github.com/thermofisherlsms/RawFileReader).
+ThermoFisher managed packages from [RawFileReader](https://github.com/thermofisherlsms/RawFileReader) are stored in `nupkg/` and use the shared `ThermoFisherVersion` property in `src/RaxportNetCore.csproj` (currently `8.0.42`). The build scripts restore them through `nupkg/NuGet.config`; other dependencies, including OpenMcdf `3.1.4`, are restored from nuget.org. A first build requires network access for packages not already cached.
 
 Native build dependency:
 
-- HDF5 from vcpkg, statically linked into the Raxport HDF5 bridge.
-- SQLite from vcpkg dynamic triplets, bundled into the single-file publish as `libsqlite3.so`, `libsqlite3.dylib`, or `sqlite3.dll`.
-- Bruker timsdata runtime libraries under `tims/` for Linux x64 and Windows x64 Bruker conversion. macOS builds remain single-file, but Bruker conversion requires adding a macOS timsdata library.
+- HDF5 from the micromamba environment, dynamically linked to the Raxport HDF5 bridge.
+- SQLite and all non-system shared dependencies of HDF5 and SQLite from the micromamba environment, relocated and bundled into the single-file publish. The published executable does not require the build environment.
+- Bruker timsdata runtime libraries under `dll/` for Linux x64 and Windows x64 Bruker conversion. macOS builds remain single-file, but Bruker conversion requires adding a macOS timsdata library.
 
-For local builds, install the vcpkg triplets for your target platform, then run the matching `dotnet publish` command above. The SQLite triplets are `x64-linux-dynamic`, `x64-osx-dynamic`, `arm64-osx-dynamic`, and `x64-windows`. See [test/note.md](./test/note.md) for additional notes.
+For local builds, run `./make.sh` or `.\make.ps1` as described above.

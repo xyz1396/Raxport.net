@@ -1,8 +1,8 @@
 # Repo-local generated directories
 /bin/
+/build/
 /obj/
 /data/
-/vcpkg/
 
 # Local notes
 /note.md

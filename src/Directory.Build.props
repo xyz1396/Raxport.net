@@ -1,7 +1,9 @@
 <Project>
   <PropertyGroup>
-    <BaseOutputPath>$(MSBuildThisFileDirectory)../bin/</BaseOutputPath>
-    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../bin/obj/</BaseIntermediateOutputPath>
-    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildThisFileDirectory)bin/**;$(MSBuildThisFileDirectory)obj/**;$(MSBuildThisFileDirectory)../bin/**;$(MSBuildThisFileDirectory)../obj/**</DefaultItemExcludes>
+    <RestoreConfigFile>$(MSBuildThisFileDirectory)../nupkg/NuGet.config</RestoreConfigFile>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../build/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../build/obj/</BaseIntermediateOutputPath>
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)../build/TestResults</VSTestResultsDirectory>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildThisFileDirectory)bin/**;$(MSBuildThisFileDirectory)obj/**;$(MSBuildThisFileDirectory)../bin/**;$(MSBuildThisFileDirectory)../build/**;$(MSBuildThisFileDirectory)../obj/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>
